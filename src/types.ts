@@ -1,5 +1,3 @@
-export type Engine = 'webspeech' | 'kokoro'
-
 export interface Chapter {
   title: string
   text: string
