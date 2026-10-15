@@ -1,6 +1,6 @@
 packages:
   - '.'
-onlyBuiltDependencies:
-  - onnxruntime-node
-  - protobufjs
-  - sharp
+allowBuilds:
+  onnxruntime-node: true
+  protobufjs: true
+  sharp: true

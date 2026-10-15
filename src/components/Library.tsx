@@ -63,7 +63,7 @@ export default function Library({ onOpen }: Props) {
       <div className="mt-8 grid gap-3">
         {books.length === 0 && <div className="text-slate-500 text-center py-8">No books yet.</div>}
         {books.map(b => (
-          <div key={b.id} className="flex items-center gap-3 bg-slate-800 rounded-xl p-4">
+          <div key={b.id} className="flex items-center gap-3 bg-slate-800 rounded-xl p-4 overflow-hidden">
             <div className="flex-1 min-w-0">
               <div className="font-semibold truncate">{b.name}</div>
               <div className="text-xs text-slate-400">

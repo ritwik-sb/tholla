@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { saveProgress, getProgress } from '../lib/storage'
-import { splitSentences } from '../lib/sentences'
+import { buildReading } from '../lib/reading'
 import { loadKokoro, generateSentence } from '../lib/kokoro'
 import type { Book, Engine } from '../types'
 
@@ -10,7 +10,10 @@ interface Props {
 }
 
 export default function Reader({ book, onBack }: Props) {
-  const sentences = useRef(splitSentences(book.text))
+  const reading = useRef(buildReading(book.text))
+  const sentences = useRef(reading.current.sentences)
+  const pauses = useRef(reading.current.pauseAfter)
+  const autoStart = useRef(reading.current.startIndex)
   const [idx, setIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [engine, setEngine] = useState<Engine>('webspeech')
@@ -24,6 +27,7 @@ export default function Reader({ book, onBack }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const timerRef = useRef<any>(null)
   const playingRef = useRef(false)
   const idxRef = useRef(0)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -38,7 +42,10 @@ export default function Reader({ book, onBack }: Props) {
   useEffect(() => {
     let cancelled = false
     getProgress(book.id).then(p => {
-      if (!cancelled) { setIdx(p); idxRef.current = p }
+      if (!cancelled) {
+        const start = p === 0 ? autoStart.current : p
+        setIdx(start); idxRef.current = start
+      }
     })
     return () => { cancelled = true }
   }, [book.id])
@@ -79,6 +86,7 @@ export default function Reader({ book, onBack }: Props) {
   const stop = () => {
     playingRef.current = false
     setPlaying(false)
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
     window.speechSynthesis?.cancel()
     if (audioRef.current) {
       audioRef.current.pause()
@@ -94,7 +102,12 @@ export default function Reader({ book, onBack }: Props) {
     const v = wsVoices.find(x => x.name === voice)
     if (v) u.voice = v
     u.rate = speed
-    u.onend = () => { if (playingRef.current) speakWS(i + 1) }
+    u.onend = () => {
+      if (!playingRef.current) return
+      const d = pauses.current[i] || 0
+      if (d > 0) timerRef.current = setTimeout(() => speakWS(i + 1), d)
+      else speakWS(i + 1)
+    }
     u.onerror = () => { if (playingRef.current) speakWS(i + 1) }
     window.speechSynthesis.speak(u)
   }
@@ -108,7 +121,13 @@ export default function Reader({ book, onBack }: Props) {
       const url = URL.createObjectURL(blob)
       const a = new Audio(url)
       audioRef.current = a
-      a.onended = () => { URL.revokeObjectURL(url); if (playingRef.current) speakKokoro(i + 1) }
+      a.onended = () => {
+        URL.revokeObjectURL(url)
+        if (!playingRef.current) return
+        const d = pauses.current[i] || 0
+        if (d > 0) timerRef.current = setTimeout(() => speakKokoro(i + 1), d)
+        else speakKokoro(i + 1)
+      }
       a.onerror = () => { URL.revokeObjectURL(url); if (playingRef.current) speakKokoro(i + 1) }
       await a.play()
     } catch (e: any) {
@@ -186,7 +205,7 @@ export default function Reader({ book, onBack }: Props) {
     <div className="max-w-4xl mx-auto p-4 md:p-6">
       <div className="flex items-center gap-3 mb-4">
         <button onClick={() => { stop(); onBack() }} className="text-slate-300 hover:text-white">← Library</button>
-        <h2 className="text-xl font-semibold truncate">{book.name}</h2>
+        <h2 className="text-xl font-semibold truncate min-w-0">{book.name}</h2>
       </div>
 
       {/* Controls */}
