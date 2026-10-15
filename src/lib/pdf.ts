@@ -19,12 +19,31 @@ export interface Extracted {
   chapters: Chapter[]
 }
 
+function normalizeSpacedCapitals(s: string): string {
+  // "H A V E" / "T E A P O T S ." -> "HAVE" / "TEAPOTS."
+  return s.replace(/(?:\b[A-Z]\s){2,}[A-Z]\.?/g, m => m.replace(/\s+/g, ''))
+}
+
+function isHeadingPara(t: string): boolean {
+  const s = t.trim()
+  if (!s || s.length > 120) return false
+  if (/^(chapter|part|section|prologue|epilogue|rule)\b/i.test(s)) return true
+  if (/^\d{1,3}\.\s+[A-Z]/.test(s)) return true
+  if (/^[IVXLC]+\.\s/.test(s)) return true
+  return false
+}
+
+function isHeadingLine(t: string): boolean {
+  const s = t.trim()
+  if (!s || s.length > 90) return false
+  return isHeadingPara(s)
+}
+
 export async function extractPdf(file: File): Promise<Extracted> {
   const buf = await file.arrayBuffer()
   const doc = await (pdfjsLib as any).getDocument({ data: buf }).promise
   const numPages = doc.numPages
 
-  // collect per-page text items with geometry
   type Item = { str: string; x: number; y: number; w: number; h: number; size: number }
   const pages: Item[][] = []
   for (let p = 1; p <= numPages; p++) {
@@ -43,7 +62,6 @@ export async function extractPdf(file: File): Promise<Extracted> {
     pages.push(items)
   }
 
-  // header/footer detection: identical trimmed strings appearing on many pages
   const lineCounts = new Map<string, number>()
   for (const items of pages) {
     const seen = new Set<string>()
@@ -57,17 +75,12 @@ export async function extractPdf(file: File): Promise<Extracted> {
   }
 
   const pageTexts: string[] = []
-  const chapterSet = new Set<string>()
-  let detectedChapters: string[] = []
-
   for (let p = 0; p < pages.length; p++) {
     const items = pages[p]
-    // sort by y desc then x asc (pdf origin bottom-left)
     const sorted = [...items].sort((a, b) => {
       if (Math.abs(a.y - b.y) > 3) return b.y - a.y
       return a.x - b.x
     })
-    // group into lines by y proximity
     const lines: { y: number; items: Item[] }[] = []
     for (const it of sorted) {
       const last = lines[lines.length - 1]
@@ -91,47 +104,75 @@ export async function extractPdf(file: File): Promise<Extracted> {
         out.push(it.str)
         prevEnd = it.x + estW
       }
-      return out.join('').replace(/\\s{2,}/g, ' ').trim()
+      const s = out.join('').replace(/\s{2,}/g, ' ').trim()
+      return isHeadingLine(s) ? '\n' + s + '\n' : s
     })
 
-    // dehyphenate across line breaks handled later
     const filtered = lineStrings.filter(ls => !isLikelyHeaderFooter(ls, lineCounts, numPages))
-
-    // chapter detection: lines with larger font or starting with Chapter/Section/digits.
-    for (const l of lines) {
-      const text = l.items.map(i => i.str).join('').trim()
-      if (!text || text.length > 80) continue
-      const avgSize = l.items.reduce((s, i) => s + i.size, 0) / l.items.length
-      const isHeading = avgSize >= 15 || /^(chapter|section|part)\b/i.test(text) || /^\d{1,2}\.\s+[A-Z]/.test(text) || /^[IVXLC]+\.\s/.test(text)
-      if (isHeading && !chapterSet.has(text)) {
-        chapterSet.add(text)
-        detectedChapters.push(text)
-      }
-    }
-
     pageTexts.push(filtered.join('\n'))
   }
 
-  // join pages; dehyphenate line wraps
   let raw = pageTexts.join('\n\n')
-  // fix hyphenated line breaks: word-\nword
   raw = raw.replace(/(\w)-\n(\w)/g, '$1$2')
-  // collapse single newlines within paragraphs but keep blank-line paragraph breaks
   raw = raw.replace(/([^\n])\n([^\n])/g, '$1 $2')
-  // normalize whitespace
   raw = raw.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+  raw = normalizeSpacedCapitals(raw)
 
-  // Group the cleaned text into chapters by detected headings.
   const FRONT_MATTER_RE = /^(contents|table of contents|index|preface|foreword|acknowledg|copyright|isbn|dedication|about the author)\b/i
-  const isHeading = (para: string) => {
-    const t = para.trim()
-    if (!t || t.length > 120) return false
-    if (/^(chapter|part|section|prologue|epilogue)\b/i.test(t)) return true
-    if (/^\d{1,2}\.\s+[A-Z]/.test(t)) return true
-    if (/^[IVXLC]+\.\s/.test(t)) return true
-    return false
+
+  // Try PDF outline (table of contents) first.
+  let outlineChapters: { title: string; text: string }[] = []
+  try {
+    const outline = await doc.getOutline()
+    const flat: { title: string; page: number; hasChildren: boolean }[] = []
+    const walk = async (items: any[], depth = 0) => {
+      for (const it of items || []) {
+        let page = -1
+        try {
+          const dest = typeof it.dest === 'string' ? await doc.getDestination(it.dest) : it.dest
+          if (dest) page = await doc.getPageIndex(dest[0])
+        } catch {}
+        if (page >= 0) {
+          flat.push({ title: normalizeSpacedCapitals(String(it.title || '').replace(/\s+/g, ' ').trim()), page, hasChildren: !!(it.items && it.items.length) })
+        }
+        await walk(it.items, depth + 1)
+      }
+    }
+    await walk(outline || [])
+    // prefer leaf nodes (actual chapters), fall back to all if none
+    let candidates = flat.filter(c => !c.hasChildren)
+    if (candidates.length < 3) candidates = flat.slice()
+    // dedupe by page + title; sort by page
+    const seen = new Set<string>()
+    candidates = candidates
+      .filter(c => c.title && !FRONT_MATTER_RE.test(c.title))
+      .filter(c => {
+        const k = c.page + '|' + c.title
+        if (seen.has(k)) return false
+        seen.add(k)
+        return true
+      })
+      .sort((a, b) => a.page - b.page)
+
+    for (let i = 0; i < candidates.length; i++) {
+      const cur = candidates[i]
+      const next = candidates[i + 1]
+      const startPage = cur.page
+      const endPage = (next ? next.page : numPages) - 1
+      if (endPage < startPage) continue
+      const text = pageTexts.slice(startPage, endPage + 1).join('\n\n').trim()
+      if (text.length < 200) continue
+      outlineChapters.push({ title: cur.title || `Chapter ${i + 1}`, text })
+    }
+  } catch {
+    outlineChapters = []
   }
 
+  if (outlineChapters.length >= 2) {
+    return { text: raw, chapters: outlineChapters.slice(0, 100) }
+  }
+
+  // Fallback: group by detected headings
   const paras = raw.split(/\n{2,}/).map(x => x.trim()).filter(Boolean)
   const chapters: { title: string; text: string }[] = []
   let curTitle = 'Start'
@@ -145,20 +186,17 @@ export async function extractPdf(file: File): Promise<Extracted> {
     }
     if (body.length > 0 || chapters.length === 0) {
       const title = curTitle === 'Start' ? '' : curTitle
-      const text = [title, body].filter(Boolean).join('\\n\\n') || raw.slice(0, 500)
+      const text = [title, body].filter(Boolean).join('\n\n') || raw.slice(0, 500)
       chapters.push({ title: curTitle, text })
     }
     curBody = []
     curTitle = 'Start'
   }
   for (const para of paras) {
-    if (isHeading(para)) {
+    if (isHeadingPara(para)) {
       flush()
       curTitle = para
     } else {
-      if (curTitle === 'Start' && curBody.length === 0 && para.length < 200 && paras.length > 5) {
-        // possibly leading front matter under implicit Start; keep it
-      }
       curBody.push(para)
     }
   }
