@@ -39,7 +39,8 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
   const selected = indexForRot(rot)
   const current = VOICES[selected]
 
-  useEffect(() => { dialRef.current?.focus() }, [])
+  // preventScroll: otherwise the browser scrolls the overlay to fit the (mostly off-screen) dial
+  useEffect(() => { dialRef.current?.focus({ preventScroll: true }) }, [])
 
   useEffect(() => {
     if (dragging) navigator.vibrate?.(6)
