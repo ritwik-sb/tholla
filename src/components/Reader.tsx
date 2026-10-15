@@ -321,21 +321,20 @@ export default function Reader({ book, onBack }: Props) {
       </div>
 
       {chapters.length > 1 && (
-        <div className="mb-4 bg-slate-800 rounded-2xl p-4">
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-3 w-full">
-              <span className="text-sm text-slate-300">Chapter</span>
-              <select
-                value={chapterIndex}
-                onChange={e => selectChapter(Number(e.target.value))}
-                className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm flex-1 min-w-0 focus-visible:ring-2 focus-visible:ring-indigo-400"
+        <div className="mb-4 bg-slate-800 rounded-2xl p-2" aria-label="Chapters">
+          {chapters.map((c, i) => (
+            <details key={i} open={i === chapterIndex} className="border-b border-slate-700 last:border-0">
+              <summary
+                className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700/40 focus-visible:ring-2 focus-visible:ring-indigo-400 rounded"
+                onClick={e => { e.preventDefault(); selectChapter(i) }}
               >
-                {chapters.map((c, i) => (
-                  <option key={i} value={i}>{c.title}</option>
-                ))}
-              </select>
-            </label>
-          </div>
+                {c.title || `Chapter ${i + 1}`}
+              </summary>
+              {i === chapterIndex && (
+                <p className="px-3 pb-2 text-xs text-slate-400">Reading this chapter. Use play controls above.</p>
+              )}
+            </details>
+          ))}
         </div>
       )}
 
@@ -378,10 +377,10 @@ export default function Reader({ book, onBack }: Props) {
       </div>
 
       {chapters.length > 1 && (
-        <div className="mt-4 text-xs text-slate-300">
-          Chapters detected: {chapters.slice(0, 8).map(c => c.title).join(' · ')}
-          {chapters.length > 8 ? ' …' : ''}
-        </div>
+        <details className="mt-4 text-xs text-slate-300">
+          <summary className="cursor-pointer">Chapters detected ({chapters.length})</summary>
+          <span className="block mt-1">{chapters.map(c => c.title).join(' · ')}</span>
+        </details>
       )}
     </main>
   )

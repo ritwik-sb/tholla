@@ -71,7 +71,8 @@ export async function extractPdf(file: File): Promise<Extracted> {
     const lines: { y: number; items: Item[] }[] = []
     for (const it of sorted) {
       const last = lines[lines.length - 1]
-      if (last && Math.abs(last.y - it.y) < 4) {
+      const tol = last ? Math.max(6, (last.items[0]?.size || it.size || 12) * 0.55) : 0
+      if (last && Math.abs(last.y - it.y) <= tol) {
         last.items.push(it)
       } else {
         lines.push({ y: it.y, items: [it] })
@@ -79,7 +80,18 @@ export async function extractPdf(file: File): Promise<Extracted> {
     }
     const lineStrings = lines.map(l => {
       l.items.sort((a, b) => a.x - b.x)
-      return l.items.map(i => i.str).join('')
+      const out: string[] = []
+      let prevEnd: number | null = null
+      for (const it of l.items) {
+        const size = it.size || 12
+        const estW = it.w && it.w > 0 ? it.w : Math.max(4, it.str.length * size * 0.5)
+        if (prevEnd !== null && it.x - prevEnd > Math.max(2, size * 0.22)) {
+          out.push(' ')
+        }
+        out.push(it.str)
+        prevEnd = it.x + estW
+      }
+      return out.join('').replace(/\\s{2,}/g, ' ').trim()
     })
 
     // dehyphenate across line breaks handled later
@@ -132,7 +144,9 @@ export async function extractPdf(file: File): Promise<Extracted> {
       return
     }
     if (body.length > 0 || chapters.length === 0) {
-      chapters.push({ title: curTitle, text: body || raw.slice(0, 500) })
+      const title = curTitle === 'Start' ? '' : curTitle
+      const text = [title, body].filter(Boolean).join('\\n\\n') || raw.slice(0, 500)
+      chapters.push({ title: curTitle, text })
     }
     curBody = []
     curTitle = 'Start'
