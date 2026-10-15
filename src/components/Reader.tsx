@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { saveProgress, getProgress } from '../lib/storage'
 import { buildReading } from '../lib/reading'
 import { loadKokoro, generateSentence } from '../lib/kokoro'
@@ -10,10 +10,26 @@ interface Props {
 }
 
 export default function Reader({ book, onBack }: Props) {
-  const reading = useRef(buildReading(book.text))
-  const sentences = useRef(reading.current.sentences)
-  const pauses = useRef(reading.current.pauseAfter)
-  const autoStart = useRef(reading.current.startIndex)
+  const [chapterIndex, setChapterIndex] = useState(0)
+  const chapterChangedRef = useRef(false)
+  const pendingIdxRef = useRef<number | null>(null)
+  const chapterText = (book.chapters?.[chapterIndex]?.text) || book.text
+  const reading = useMemo(() => buildReading(chapterText), [chapterText])
+  const sentences = useRef(reading.sentences)
+  const pauses = useRef(reading.pauseAfter)
+  const autoStart = useRef(reading.startIndex)
+
+  useEffect(() => {
+    sentences.current = reading.sentences
+    pauses.current = reading.pauseAfter
+    autoStart.current = reading.startIndex
+    if (chapterChangedRef.current) {
+      const start = pendingIdxRef.current != null ? pendingIdxRef.current : reading.startIndex
+      setIdx(start); idxRef.current = start
+      pendingIdxRef.current = null
+      chapterChangedRef.current = false
+    }
+  }, [reading])
   const [idx, setIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [engine, setEngine] = useState<Engine>('webspeech')
@@ -42,9 +58,17 @@ export default function Reader({ book, onBack }: Props) {
   useEffect(() => {
     let cancelled = false
     getProgress(book.id).then(p => {
-      if (!cancelled) {
-        const start = p === 0 ? autoStart.current : p
+      if (cancelled) return
+      const ch = p.chapterIndex ?? 0
+      pendingIdxRef.current = (p.sentenceIndex ?? 0) === 0 ? null : p.sentenceIndex
+      chapterChangedRef.current = true
+      if (ch === chapterIndex) {
+        const start = pendingIdxRef.current != null ? pendingIdxRef.current : (autoStart.current ?? 0)
         setIdx(start); idxRef.current = start
+        pendingIdxRef.current = null
+        chapterChangedRef.current = false
+      } else {
+        setChapterIndex(ch)
       }
     })
     return () => { cancelled = true }
@@ -73,7 +97,7 @@ export default function Reader({ book, onBack }: Props) {
       window.speechSynthesis?.cancel()
       audioRef.current?.pause()
       if (audioRef.current?.src) URL.revokeObjectURL(audioRef.current.src)
-      saveProgress(book.id, idxRef.current)
+      saveProgress(book.id, chapterIndex, idxRef.current)
     }
   }, [book.id])
 
@@ -92,7 +116,7 @@ export default function Reader({ book, onBack }: Props) {
       audioRef.current.pause()
       audioRef.current = null
     }
-    saveProgress(book.id, idxRef.current)
+    saveProgress(book.id, chapterIndex, idxRef.current)
   }
 
   const speakWS = (i: number) => {
@@ -175,13 +199,21 @@ export default function Reader({ book, onBack }: Props) {
     setPlaying(false)
     if (engine === 'webspeech') window.speechSynthesis?.pause()
     else audioRef.current?.pause()
-    saveProgress(book.id, idxRef.current)
+    saveProgress(book.id, chapterIndex, idxRef.current)
   }
 
   const jump = (i: number) => {
     stop()
     const v = Math.max(0, Math.min(total - 1, i))
     setIdx(v); idxRef.current = v
+  }
+
+  const selectChapter = (i: number) => {
+    stop()
+    if (i === chapterIndex) return
+    pendingIdxRef.current = null
+    chapterChangedRef.current = true
+    setChapterIndex(i)
   }
 
   const loadKokoroNow = async () => {
@@ -280,6 +312,23 @@ export default function Reader({ book, onBack }: Props) {
           Sentence {Math.min(idx + 1, total)} of {total}
         </div>
       </div>
+
+      {book.chapters && book.chapters.length > 1 && (
+        <div className="mb-4 bg-slate-800 rounded-2xl p-4">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-400">Chapter</span>
+            <select
+              value={chapterIndex}
+              onChange={e => selectChapter(Number(e.target.value))}
+              className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm flex-1 min-w-0"
+            >
+              {book.chapters.map((c, i) => (
+                <option key={i} value={i}>{c.title}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* Text */}
       <div ref={containerRef} className="bg-slate-900 rounded-2xl p-5 max-h-[60vh] overflow-y-auto leading-7">

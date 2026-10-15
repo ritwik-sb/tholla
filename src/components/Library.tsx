@@ -42,7 +42,7 @@ export default function Library({ onOpen }: Props) {
 
   return (
     <div className="max-w-3xl mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-2">PDF Audiobook</h1>
+      <h1 className="text-3xl font-bold mb-2">തൊള്ള</h1>
       <p className="text-slate-400 mb-6">Upload a PDF to listen to it like an audiobook. Everything stays in your browser.</p>
 
       <label className={`block border-2 border-dashed border-slate-600 rounded-2xl p-8 text-center cursor-pointer hover:border-slate-400 transition ${busy ? 'opacity-50 pointer-events-none' : ''}`}>

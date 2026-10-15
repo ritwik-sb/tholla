@@ -12,9 +12,9 @@ export default defineConfig({
       workbox: { maximumFileSizeToCacheInBytes: 30 * 1024 * 1024 },
       includeAssets: ['icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'PDF Audiobook',
-        short_name: 'PDF Audio',
-        description: 'Turn your PDFs into audiobooks — read aloud offline.',
+        name: 'തൊള്ള',
+        short_name: 'തൊള്ള',
+        description: 'PDFs as audiobooks — read aloud offline.',
         theme_color: '#0f172a',
         background_color: '#0f172a',
         display: 'standalone',

@@ -12,9 +12,11 @@ function isLikelyHeaderFooter(line: string, repeated: Map<string, number>, pages
   return count > Math.max(2, Math.floor(pages / 2))
 }
 
+import type { Chapter } from '../types'
+
 export interface Extracted {
   text: string
-  chapters: string[]
+  chapters: Chapter[]
 }
 
 export async function extractPdf(file: File): Promise<Extracted> {
@@ -107,7 +109,49 @@ export async function extractPdf(file: File): Promise<Extracted> {
   // normalize whitespace
   raw = raw.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
 
-  if (!detectedChapters.length) detectedChapters = ['Start']
+  // Group the cleaned text into chapters by detected headings.
+  const FRONT_MATTER_RE = /^(contents|table of contents|index|preface|foreword|acknowledg|copyright|isbn|dedication|about the author)\b/i
+  const isHeading = (para: string) => {
+    const t = para.trim()
+    if (!t || t.length > 120) return false
+    if (/^(chapter|part|section|prologue|epilogue)\b/i.test(t)) return true
+    if (/^\d{1,2}\.\s+[A-Z]/.test(t)) return true
+    if (/^[IVXLC]+\.\s/.test(t)) return true
+    return false
+  }
 
-  return { text: raw, chapters: detectedChapters.slice(0, 200) }
+  const paras = raw.split(/\n{2,}/).map(x => x.trim()).filter(Boolean)
+  const chapters: { title: string; text: string }[] = []
+  let curTitle = 'Start'
+  let curBody: string[] = []
+  const flush = () => {
+    const body = curBody.join('\n\n').trim()
+    if (FRONT_MATTER_RE.test(curTitle)) {
+      curBody = []
+      curTitle = 'Start'
+      return
+    }
+    if (body.length > 0 || chapters.length === 0) {
+      chapters.push({ title: curTitle, text: body || raw.slice(0, 500) })
+    }
+    curBody = []
+    curTitle = 'Start'
+  }
+  for (const para of paras) {
+    if (isHeading(para)) {
+      flush()
+      curTitle = para
+    } else {
+      if (curTitle === 'Start' && curBody.length === 0 && para.length < 200 && paras.length > 5) {
+        // possibly leading front matter under implicit Start; keep it
+      }
+      curBody.push(para)
+    }
+  }
+  flush()
+
+  const filtered = chapters.filter(c => c.text.trim().length > 0)
+  const finalChapters = filtered.length ? filtered : [{ title: 'Full text', text: raw }]
+
+  return { text: raw, chapters: finalChapters.slice(0, 100) }
 }

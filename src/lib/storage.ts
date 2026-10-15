@@ -3,12 +3,12 @@ import type { Book } from '../types'
 
 class AudiobookDB extends Dexie {
   books!: Table<Book, string>
-  progress!: Table<{ bookId: string; sentenceIndex: number; updatedAt: number }, string>
+  progress!: Table<{ bookId: string; chapterIndex: number; sentenceIndex: number; updatedAt: number }, string>
   bookmarks!: Table<{ id?: number; bookId: string; sentenceIndex: number; note: string; createdAt: number }, number>
 
   constructor() {
     super('audiobook')
-    this.version(1).stores({
+    this.version(3).stores({
       books: 'id, createdAt',
       progress: 'bookId',
       bookmarks: '++id, bookId, sentenceIndex',
@@ -36,11 +36,11 @@ export async function deleteBook(id: string) {
   await db.bookmarks.where('bookId').equals(id).delete()
 }
 
-export async function saveProgress(bookId: string, sentenceIndex: number) {
-  await db.progress.put({ bookId, sentenceIndex, updatedAt: Date.now() })
+export async function saveProgress(bookId: string, chapterIndex: number, sentenceIndex: number) {
+  await db.progress.put({ bookId, chapterIndex, sentenceIndex, updatedAt: Date.now() })
 }
 
 export async function getProgress(bookId: string) {
   const p = await db.progress.get(bookId)
-  return p?.sentenceIndex ?? 0
+  return { chapterIndex: p?.chapterIndex ?? 0, sentenceIndex: p?.sentenceIndex ?? 0 }
 }
