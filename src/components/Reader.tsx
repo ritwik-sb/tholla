@@ -10,10 +10,11 @@ interface Props {
 }
 
 export default function Reader({ book, onBack }: Props) {
+  const chapters = book.chapters ?? []
   const [chapterIndex, setChapterIndex] = useState(0)
   const chapterChangedRef = useRef(false)
   const pendingIdxRef = useRef<number | null>(null)
-  const chapterText = (book.chapters?.[chapterIndex]?.text) || book.text
+  const chapterText = (chapters[chapterIndex]?.text) || book.text
   const reading = useMemo(() => buildReading(chapterText), [chapterText])
   const sentences = useRef(reading.sentences)
   const pauses = useRef(reading.pauseAfter)
@@ -31,8 +32,10 @@ export default function Reader({ book, onBack }: Props) {
     }
   }, [reading])
   const [idx, setIdx] = useState(0)
+  const chapterIndexRef = useRef(chapterIndex)
+  useEffect(() => { chapterIndexRef.current = chapterIndex }, [chapterIndex])
   const [playing, setPlaying] = useState(false)
-  const [engine, setEngine] = useState<Engine>('webspeech')
+  const [engine, setEngine] = useState<Engine>('kokoro')
   const [speed, setSpeed] = useState(1)
   const [voice, setVoice] = useState('')
   const [wsVoices, setWsVoices] = useState<SpeechSynthesisVoice[]>([])
@@ -49,6 +52,9 @@ export default function Reader({ book, onBack }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
 
   const total = sentences.current.length
+  const WINDOW = 80
+  const start = total > 160 ? Math.max(0, idx - WINDOW) : 0
+  const end = total > 160 ? Math.min(total, idx + WINDOW + 1) : total
 
   useEffect(() => {
     idxRef.current = idx
@@ -62,7 +68,7 @@ export default function Reader({ book, onBack }: Props) {
       const ch = p.chapterIndex ?? 0
       pendingIdxRef.current = (p.sentenceIndex ?? 0) === 0 ? null : p.sentenceIndex
       chapterChangedRef.current = true
-      if (ch === chapterIndex) {
+      if (ch === chapterIndexRef.current) {
         const start = pendingIdxRef.current != null ? pendingIdxRef.current : (autoStart.current ?? 0)
         setIdx(start); idxRef.current = start
         pendingIdxRef.current = null
@@ -104,7 +110,8 @@ export default function Reader({ book, onBack }: Props) {
   // scroll active sentence
   useEffect(() => {
     const el = containerRef.current?.querySelector(`[data-i="${idx}"]`)
-    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    el?.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' })
   }, [idx])
 
   const stop = () => {
@@ -234,7 +241,7 @@ export default function Reader({ book, onBack }: Props) {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-4 md:p-6">
+    <main className="max-w-4xl mx-auto p-4 md:p-6">
       <div className="flex items-center gap-3 mb-4">
         <button onClick={() => { stop(); onBack() }} className="text-slate-300 hover:text-white">← Library</button>
         <h2 className="text-xl font-semibold truncate min-w-0">{book.name}</h2>
@@ -248,41 +255,41 @@ export default function Reader({ book, onBack }: Props) {
           ) : (
             <button onClick={pause} className="px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg font-medium">⏸ Pause</button>
           )}
-          <button onClick={stop} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg">⏹ Stop</button>
-          <button onClick={() => jump(idx - 1)} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg">⏮</button>
-          <button onClick={() => jump(idx + 1)} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg">⏭</button>
+          <button onClick={stop} className="min-h-[44px] px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg focus-visible:ring-2 focus-visible:ring-indigo-400" aria-label="Stop playback">⏹ Stop</button>
+          <button onClick={() => jump(idx - 1)} className="min-h-[44px] min-w-[44px] px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg focus-visible:ring-2 focus-visible:ring-indigo-400" aria-label="Previous sentence">⏮</button>
+          <button onClick={() => jump(idx + 1)} className="min-h-[44px] min-w-[44px] px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg focus-visible:ring-2 focus-visible:ring-indigo-400" aria-label="Next sentence">⏭</button>
 
-          <div className="flex items-center gap-2 ml-2">
-            <span className="text-sm text-slate-400">Engine</span>
+          <label className="flex items-center gap-2 ml-2">
+            <span className="text-sm text-slate-300">Engine</span>
             <select
               value={engine}
               onChange={e => setEngine(e.target.value as Engine)}
-              className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm"
+              className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
               <option value="webspeech">Web Speech (instant)</option>
               <option value="kokoro">Kokoro (high quality)</option>
             </select>
-          </div>
+          </label>
 
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-400">Speed</span>
+          <label className="flex items-center gap-2">
+            <span className="text-sm text-slate-300">Speed</span>
             <select
               value={speed}
               onChange={e => setSpeed(Number(e.target.value))}
-              className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm"
+              className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
               {[0.75, 1, 1.25, 1.5, 1.75, 2].map(s => (
                 <option key={s} value={s}>{s}×</option>
               ))}
             </select>
-          </div>
+          </label>
 
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-400">Voice</span>
+          <label className="flex items-center gap-2">
+            <span className="text-sm text-slate-300">Voice</span>
             <select
               value={voice}
               onChange={e => setVoice(e.target.value)}
-              className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm max-w-[220px]"
+              className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm max-w-[220px] focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
               {engine === 'webspeech'
                 ? wsVoices.filter(v => v.lang.startsWith('en')).map(v => (
@@ -292,7 +299,7 @@ export default function Reader({ book, onBack }: Props) {
                     <option key={v} value={v}>{v}</option>
                   ))}
             </select>
-          </div>
+          </label>
         </div>
 
         {engine === 'kokoro' && !kokoroReady && (
@@ -313,43 +320,69 @@ export default function Reader({ book, onBack }: Props) {
         </div>
       </div>
 
-      {book.chapters && book.chapters.length > 1 && (
+      {chapters.length > 1 && (
         <div className="mb-4 bg-slate-800 rounded-2xl p-4">
           <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-400">Chapter</span>
-            <select
-              value={chapterIndex}
-              onChange={e => selectChapter(Number(e.target.value))}
-              className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm flex-1 min-w-0"
-            >
-              {book.chapters.map((c, i) => (
-                <option key={i} value={i}>{c.title}</option>
-              ))}
-            </select>
+            <label className="flex items-center gap-3 w-full">
+              <span className="text-sm text-slate-300">Chapter</span>
+              <select
+                value={chapterIndex}
+                onChange={e => selectChapter(Number(e.target.value))}
+                className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm flex-1 min-w-0 focus-visible:ring-2 focus-visible:ring-indigo-400"
+              >
+                {chapters.map((c, i) => (
+                  <option key={i} value={i}>{c.title}</option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
       )}
 
-      {/* Text */}
-      <div ref={containerRef} className="bg-slate-900 rounded-2xl p-5 max-h-[60vh] overflow-y-auto leading-7">
-        {sentences.current.map((s, i) => (
-          <span
+      {/* Text (windowed for long books) */}
+      <div ref={containerRef} className="bg-slate-900 rounded-2xl p-5 max-h-[60vh] overflow-y-auto leading-7" aria-label="Reading text">
+        {total > 160 && (
+          <p className="text-xs text-slate-400 mb-2">
+            Showing sentences around the current position for performance.{' '}
+            {start > 0 && <button type="button" className="underline focus-visible:ring-2 focus-visible:ring-indigo-400" onClick={() => jump(0)}>Jump to beginning</button>}
+          </p>
+        )}
+        {start > 0 && (
+          <p className="text-xs text-slate-500 mb-2">…{start} sentences above…</p>
+        )}
+        {sentences.current.slice(start, end).map((s, offset) => {
+          const i = start + offset
+          return (
+          <button
+            type="button"
             key={i}
             data-i={i}
+            tabIndex={i === idx ? 0 : -1}
+            aria-current={i === idx ? 'true' : undefined}
+            aria-label={`Sentence ${i + 1}`}
             onClick={() => jump(i)}
-            className={`cursor-pointer rounded px-1 transition ${i === idx ? 'bg-indigo-600/40 text-white' : 'hover:bg-slate-700/60'}`}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(i) }
+              if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); jump(i + 1) }
+              if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); jump(i - 1) }
+            }}
+            className={`inline text-left rounded px-1 transition focus-visible:ring-2 focus-visible:ring-indigo-400 ${i === idx ? 'bg-indigo-600/40 text-white' : 'hover:bg-slate-700/60'}`}
           >
             {s}{' '}
-          </span>
-        ))}
+          </button>
+          )
+        })}
+        {end < total && (
+          <p className="text-xs text-slate-500 mt-2">…{total - end} sentences below…</p>
+        )}
       </div>
 
-      {book.chapters.length > 1 && (
-        <div className="mt-4 text-xs text-slate-500">
-          Chapters detected: {book.chapters.slice(0, 8).join(' · ')}
-          {book.chapters.length > 8 ? ' …' : ''}
+      {chapters.length > 1 && (
+        <div className="mt-4 text-xs text-slate-300">
+          Chapters detected: {chapters.slice(0, 8).map(c => c.title).join(' · ')}
+          {chapters.length > 8 ? ' …' : ''}
         </div>
       )}
-    </div>
+    </main>
   )
 }
