@@ -134,13 +134,17 @@ function joinPage(full: string, next: string, paragraphBreak: boolean): string {
 
 const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
-export async function extractPdf(file: File): Promise<Extracted> {
+export type ExtractProgress = { phase: 'opening' | 'pages' | 'chapters'; done: number; total: number }
+
+export async function extractPdf(file: File, onProgress?: (p: ExtractProgress) => void): Promise<Extracted> {
+  onProgress?.({ phase: 'opening', done: 0, total: 0 })
   const buf = await file.arrayBuffer()
   const doc = await (pdfjsLib as any).getDocument({ data: buf }).promise
   const numPages: number = doc.numPages
 
   const pages: Item[][] = []
   for (let p = 1; p <= numPages; p++) {
+    onProgress?.({ phase: 'pages', done: p - 1, total: numPages })
     const page = await doc.getPage(p)
     const content = await page.getTextContent()
     pages.push(
@@ -186,6 +190,7 @@ export async function extractPdf(file: File): Promise<Extracted> {
   }
   full = full.replace(/\n{3,}/g, '\n\n').trim()
 
+  onProgress?.({ phase: 'chapters', done: numPages, total: numPages })
   const chapters = (await outlineChapters(doc, full, pageStart, numPages)) ?? headingChapters(full)
   return { text: full, chapters: chapters.length ? chapters.slice(0, 150) : [{ title: 'Full text', text: full }] }
 }

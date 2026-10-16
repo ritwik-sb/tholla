@@ -476,7 +476,7 @@ export default function Reader({ book, onBack }: Props) {
           onClick={e => { if (e.target === e.currentTarget) setBandOpen(false) }}
           onKeyDown={e => { if (e.key === 'Escape') setBandOpen(false) }}
         >
-          <Case className="w-full max-w-md rounded-[22px] p-5 pt-7 max-h-[80dvh] flex flex-col">
+          <Case rivets={false} className="w-full max-w-md rounded-[22px] p-5 pt-7 max-h-[80dvh] flex flex-col">
             <p className="stamp text-xs engraved text-center mb-3">Select band</p>
             <ul className="panel p-2 overflow-y-auto">
               {chapters.map((c, i) => (

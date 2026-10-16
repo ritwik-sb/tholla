@@ -1,8 +1,21 @@
 import { useRef, type ReactNode } from 'react'
 
-export function Case({ children, className = '' }: { children: ReactNode; className?: string }) {
+const RIVETS = 14
+
+export function Case({ children, className = '', rivets = true }: { children: ReactNode; className?: string; rivets?: boolean }) {
   return (
     <div className={`radio-case ${className}`}>
+      {/* rust weeping from the screws and a couple of rivets */}
+      <span className="streak" style={{ top: 24, left: 20, height: 110 }} aria-hidden="true" />
+      <span className="streak" style={{ top: 24, right: 14, height: 70, opacity: 0.6 }} aria-hidden="true" />
+      {rivets && (
+        <>
+          <span className="streak" style={{ top: 22, left: '37%', height: 54, width: 8, opacity: 0.55 }} aria-hidden="true" />
+          <span className="streak" style={{ top: 22, left: '71%', height: 80, width: 9, opacity: 0.7 }} aria-hidden="true" />
+          <div className="rivets top" aria-hidden="true">{Array.from({ length: RIVETS }, (_, i) => <span key={i} className="rivet" />)}</div>
+          <div className="rivets bottom" aria-hidden="true">{Array.from({ length: RIVETS }, (_, i) => <span key={i} className="rivet" />)}</div>
+        </>
+      )}
       <span className="screw tl" aria-hidden="true" />
       <span className="screw tr" aria-hidden="true" />
       <span className="screw bl" aria-hidden="true" />
@@ -131,6 +144,15 @@ export function Knob({
         </div>
       </div>
       <span className="stamp text-[10px] engraved -mt-2">{label}</span>
+    </div>
+  )
+}
+
+export function SerialPlate() {
+  return (
+    <div className="serial" aria-hidden="true">
+      <span className="stamp text-[9px] tracking-[.25em]">Ser. No. 0082 · Type K-82</span>
+      <span className="stamp text-[8px] tracking-[.3em] opacity-80">Made in Kerala · 220 V ~ 50 c/s</span>
     </div>
   )
 }

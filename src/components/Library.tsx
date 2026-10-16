@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { listBooks, deleteBook, saveBook, saveFile, getFile, getProgress, saveProgress, resetProgress } from '../lib/storage'
-import { extractPdf, PARSER_VERSION } from '../lib/pdf'
+import { extractPdf, PARSER_VERSION, type ExtractProgress } from '../lib/pdf'
 import type { Book } from '../types'
-import { Case, Grille, Icon, Wordmark } from './radio'
+import { Case, Grille, Icon, SerialPlate, Wordmark } from './radio'
 
 interface Props {
   onOpen: (book: Book) => void
@@ -11,6 +11,7 @@ interface Props {
 export default function Library({ onOpen }: Props) {
   const [books, setBooks] = useState<Book[]>([])
   const [busy, setBusy] = useState(false)
+  const [job, setJob] = useState<(ExtractProgress & { name: string; index: number; count: number }) | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -38,8 +39,8 @@ export default function Library({ onOpen }: Props) {
     })
   }, [])
 
-  const reimport = async (existing: Book | undefined, file: Blob, name?: string) => {
-    const { text, chapters } = await extractPdf(file as File)
+  const reimport = async (existing: Book | undefined, file: Blob, name?: string, onProgress?: (p: ExtractProgress) => void) => {
+    const { text, chapters } = await extractPdf(file as File, onProgress)
     const book: Book = {
       id: existing?.id ?? crypto.randomUUID(),
       name: existing?.name ?? (name ?? 'Untitled').replace(/\.pdf$/i, ''),
@@ -67,7 +68,8 @@ export default function Library({ onOpen }: Props) {
     setError(null)
     const errs: string[] = []
     try {
-      for (const file of Array.from(files)) {
+      const list = Array.from(files)
+      for (const [index, file] of list.entries()) {
         if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
           errs.push(`${file.name}: not a PDF`)
           continue
@@ -75,7 +77,7 @@ export default function Library({ onOpen }: Props) {
         try {
           const name = file.name.replace(/\.pdf$/i, '')
           const existing = target ?? books.find(b => b.name === name)
-          await reimport(existing, file, file.name)
+          await reimport(existing, file, file.name, p => setJob({ ...p, name, index, count: list.length }))
         } catch (e: any) {
           errs.push(`${file.name}: ${e?.message || 'failed to import'}`)
         }
@@ -84,6 +86,7 @@ export default function Library({ onOpen }: Props) {
       await refresh()
     } finally {
       setBusy(false)
+      setJob(null)
       setDragging(false)
     }
   }
@@ -101,13 +104,14 @@ export default function Library({ onOpen }: Props) {
 
         <div className="relative">
           <Grille rows={7} />
-          <span className="brass stamp text-[10px] absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-3 py-1 whitespace-nowrap">
-            High fidelity
+          <span className="brass stamp text-[10px] absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-3 py-1 whitespace-nowrap flex items-center gap-2">
+            {busy && <span className="lamp lamp-sm on blink" aria-hidden="true" />}
+            {busy ? 'Receiving' : 'High fidelity'}
           </span>
         </div>
 
         <label
-          className={`panel block px-5 py-5 text-center cursor-pointer transition ${dragging ? 'ring-2 ring-[var(--amber)]' : ''} ${busy ? 'opacity-60 pointer-events-none' : ''}`}
+          className={`panel block px-5 py-5 text-center cursor-pointer transition ${dragging ? 'ring-2 ring-[var(--amber)]' : ''} ${busy ? 'pointer-events-none' : ''}`}
           onDragOver={e => { if (!busy) { e.preventDefault(); setDragging(true) } }}
           onDragLeave={() => setDragging(false)}
           onDrop={e => { if (!busy) { e.preventDefault(); handleFiles(e.dataTransfer.files) } }}
@@ -121,12 +125,40 @@ export default function Library({ onOpen }: Props) {
             aria-label="Choose PDF files to import"
             onChange={e => handleFiles(e.target.files)}
           />
-          {/* the slot a book is "inserted" into */}
-          <span className="block mx-auto h-3 max-w-[220px] rounded-full bg-gradient-to-b from-black to-[#2a2621] shadow-[inset_0_3px_4px_rgba(0,0,0,.95),0_1px_0_rgba(255,255,255,.2)]" aria-hidden="true" />
-          <span className="block mt-3 stamp text-sm engraved">
-            {busy ? 'Reading the book…' : dragging ? 'Release to insert' : 'Insert a PDF'}
-          </span>
-          <span className="block mt-1 stamp text-[10px] engraved-dark">Tap to choose · or drop it here</span>
+          {/* the slot a book is "inserted" into; it lights up and scans while a PDF is read */}
+          <span className={`book-slot ${busy ? 'scanning' : ''}`} aria-hidden="true" />
+          {busy ? (
+            <span className="block mt-4" role="status" aria-live="polite">
+              <span className="flex justify-center gap-3" aria-hidden="true">
+                {[0, 1, 2, 3, 4].map(i => (
+                  <span key={i} className="lamp lamp-sm on flicker" style={{ animationDelay: `${i * -0.37}s`, animationDuration: `${0.9 + (i % 3) * 0.35}s` }} />
+                ))}
+              </span>
+              <span className="dial-window block mt-4 mx-auto max-w-[320px] px-4 pt-2 pb-3">
+                <span className="tuning block">
+                  <span
+                    className={`needle ${job?.phase === 'pages' ? '' : 'sweep'}`}
+                    style={job?.phase === 'pages' && job.total ? { left: `${(job.done / job.total) * 100}%` } : undefined}
+                  />
+                </span>
+                <span className="block mt-2 stamp text-[11px] text-[var(--amber-text)] tabular-nums">
+                  {!job || job.phase === 'opening' ? 'Opening the book…'
+                    : job.phase === 'pages' ? `Reading page ${job.done + 1} of ${job.total}`
+                    : 'Finding the chapters…'}
+                </span>
+              </span>
+              {job && (
+                <span className="block mt-2 stamp text-[10px] engraved-dark truncate">
+                  {job.count > 1 ? `${job.index + 1} of ${job.count} · ` : ''}{job.name}
+                </span>
+              )}
+            </span>
+          ) : (
+            <>
+              <span className="block mt-3 stamp text-sm engraved">{dragging ? 'Release to insert' : 'Insert a PDF'}</span>
+              <span className="block mt-1 stamp text-[10px] engraved-dark">Tap to choose · or drop it here</span>
+            </>
+          )}
         </label>
 
         {error && <p className="stamp text-xs text-red-300 text-center">{error}</p>}
@@ -187,9 +219,12 @@ export default function Library({ onOpen }: Props) {
           ))}
         </section>
 
-        <p className="stamp text-[9px] engraved-dark text-center mt-auto pt-4">
-          Books and voices stay on this device · Install from the browser menu to use offline
-        </p>
+        <div className="mt-auto pt-4 flex flex-col items-center gap-3">
+          <SerialPlate />
+          <p className="stamp text-[9px] engraved-dark text-center">
+            Books and voices stay on this device · Install from the browser menu to use offline
+          </p>
+        </div>
       </Case>
     </main>
   )

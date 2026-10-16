@@ -30,6 +30,10 @@
   /* alpha masks that erase paint in patches: heavy for the name plate, light for small labels */
   --wear-heavy: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='130'><filter id='w'><feTurbulence type='fractalNoise' baseFrequency='.14 .26' numOctaves='3' seed='7'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 -6 4.55'/></filter><rect width='100%' height='100%' filter='url(%23w)'/></svg>");
   --wear-light: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='80'><filter id='w'><feTurbulence type='fractalNoise' baseFrequency='.08 .2' numOctaves='3' seed='3'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 -2.6 2.2'/></filter><rect width='100%' height='100%' filter='url(%23w)'/></svg>");
+  /* fine rust pitting, big rust blooms, and a chip mask for the old enamel paint */
+  --rust-pits: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='2' seed='11' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .42 0 0 0 0 .19 0 0 0 0 .07 0 0 0 9 -6.1'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>");
+  --rust-bloom: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='700' height='900'><filter id='b'><feTurbulence type='fractalNoise' baseFrequency='.007 .01' numOctaves='5' seed='4' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .33 0 0 0 0 .15 0 0 0 0 .06 0 0 0 6 -3.75'/></filter><rect width='100%' height='100%' filter='url(%23b)'/></svg>");
+  --enamel-chips: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='1000'><filter id='c'><feTurbulence type='fractalNoise' baseFrequency='.018 .024' numOctaves='6' seed='21' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 14 -6.6'/></filter><rect width='100%' height='100%' filter='url(%23c)'/></svg>");
   --scratches: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><g stroke='white' stroke-opacity='.07' stroke-width='.6' fill='none'><path d='M10 40 L190 22'/><path d='M60 210 L340 180'/><path d='M230 60 L390 95'/><path d='M30 270 L120 240'/><path d='M280 260 L380 230'/><path d='M140 120 L170 140'/></g></svg>");
 }
 
@@ -61,19 +65,42 @@ body::before {
   isolation: isolate;
   background:
     var(--scratches),
+    var(--rust-pits),
+    var(--rust-bloom),
     radial-gradient(38% 26% at 88% 12%, rgba(var(--rust), .38), transparent 70%),
     radial-gradient(30% 22% at 6% 92%, rgba(var(--rust), .45), transparent 72%),
     radial-gradient(22% 18% at 70% 96%, rgba(var(--patina), .35), transparent 70%),
     radial-gradient(26% 16% at 12% 30%, rgba(var(--patina), .22), transparent 70%),
     repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 3px),
     linear-gradient(170deg, var(--steel-hi) 0%, var(--steel) 38%, #5a5850 70%, var(--steel-lo) 100%);
+  background-size: 400px 300px, 160px 160px, 700px 900px, auto, auto, auto, auto, auto, auto;
   box-shadow:
     inset 0 2px 0 rgba(255,255,255,.28),
     inset 0 0 0 1px rgba(0,0,0,.35),
+    inset 0 0 0 3px rgba(210,200,180,.10),   /* edges rubbed back to bright metal */
     inset 0 -6px 14px rgba(0,0,0,.45),
+    inset 0 0 60px rgba(48,28,12,.55),       /* grime gathered towards the corners */
     inset 0 10px 30px rgba(255,255,255,.06),
     0 30px 60px rgba(0,0,0,.6),
     0 6px 14px rgba(0,0,0,.5);
+}
+/* what's left of the factory green enamel, chipped down to bare steel */
+.radio-case::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(60% 40% at 30% 20%, rgba(255,255,255,.06), transparent 70%),
+    linear-gradient(170deg, #5d7466, #42574b 60%, #34453b);
+  opacity: .55;
+  -webkit-mask-image: var(--enamel-chips);
+  mask-image: var(--enamel-chips);
+  -webkit-mask-size: 800px 1000px;
+  mask-size: 800px 1000px;
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,.45));
 }
 .radio-case::after {
   content: '';
@@ -86,6 +113,73 @@ body::before {
   mix-blend-mode: multiply;
   z-index: -1;
 }
+
+/* rust weeping down from each screw */
+.streak {
+  position: absolute;
+  width: 12px;
+  height: 90px;
+  margin-left: -6px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(92,40,14,.9), rgba(110,50,18,.5) 35%, rgba(110,50,18,.15) 75%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 35%, #000 65%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 35%, #000 65%, transparent);
+  border-radius: 6px 6px 50% 50%;
+  filter: blur(.8px);
+  opacity: .9;
+  mix-blend-mode: multiply;
+}
+
+/* rows of rivets along the top and bottom seams */
+.rivets {
+  position: absolute;
+  left: 44px;
+  right: 44px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.rivets.top { top: 18px; }
+.rivets.bottom { bottom: 18px; }
+.rivet {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #d9d5c8, #7b776c 60%, #3e3b34);
+  box-shadow: 0 1px 1px rgba(0,0,0,.7), 0 2px 5px rgba(var(--rust), .5);
+}
+.rivet:nth-child(3n) { background: radial-gradient(circle at 35% 30%, #b0835a, #6b3a1c 65%, #3a1e0d); }
+
+/* serial plate */
+.serial {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 22px;
+  border-radius: 4px;
+  color: #2c261b;
+  background:
+    var(--rust-pits),
+    linear-gradient(180deg, #c9c2ae, #a8a08a);
+  background-size: 120px 120px, auto;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.4), inset 0 -1px 2px rgba(0,0,0,.35), 0 2px 3px rgba(0,0,0,.5);
+  text-shadow: 0 1px 0 rgba(255,255,255,.35);
+}
+.serial::before, .serial::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #e5e2d6, #6f6b60 70%);
+  box-shadow: 0 1px 1px rgba(0,0,0,.6);
+}
+.serial::before { left: 6px; }
+.serial::after { right: 6px; }
 
 /* recessed sub-panel */
 .panel {
@@ -493,8 +587,53 @@ body::before {
   transition: transform .4s ease;
 }
 
+/* ── activity: slot scanner, flickering lamps ───────────────── */
+.lamp.lamp-sm { width: 10px; height: 10px; box-shadow: 0 0 0 2px #2a2621, 0 0 0 3px #8f8b80, inset 0 1px 2px rgba(0,0,0,.7); }
+.lamp.lamp-sm.on { box-shadow: 0 0 0 2px #2a2621, 0 0 0 3px #8f8b80, 0 0 10px 3px rgba(255,160,50,.55); }
+.flicker { animation: lamp-flicker 1.2s steps(1, end) infinite; }
+.blink { animation: lamp-blink 1s ease-in-out infinite; }
+@keyframes lamp-flicker {
+  0%   { filter: brightness(1); opacity: 1; }
+  12%  { filter: brightness(.35); opacity: .55; }
+  19%  { filter: brightness(1.15); opacity: 1; }
+  41%  { filter: brightness(.6); opacity: .8; }
+  48%  { filter: brightness(1.2); opacity: 1; }
+  73%  { filter: brightness(.25); opacity: .45; }
+  79%  { filter: brightness(1); opacity: 1; }
+}
+@keyframes lamp-blink { 50% { filter: brightness(.3); opacity: .5; } }
+
+.book-slot {
+  position: relative;
+  display: block;
+  margin: 0 auto;
+  height: 12px;
+  max-width: 240px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #000, #2a2621);
+  box-shadow: inset 0 3px 4px rgba(0,0,0,.95), 0 1px 0 rgba(255,255,255,.2);
+}
+.book-slot.scanning::after {
+  /* amber light sweeping through the slot while the book is read */
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 30%;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, rgba(255,210,130,.95), rgba(255,150,40,.55) 55%, transparent);
+  box-shadow: 0 0 12px rgba(255,160,50,.7);
+  animation: slot-scan 1.4s ease-in-out infinite alternate;
+}
+@keyframes slot-scan { from { left: -10%; } to { left: 80%; } }
+
+.needle.sweep { animation: needle-sweep 1.8s ease-in-out infinite alternate; }
+@keyframes needle-sweep { from { left: 4%; } to { left: 96%; } }
+
 @media (prefers-reduced-motion: reduce) {
   .needle, .knob .pointer, .meter .arm { transition: none; }
+  .flicker, .blink, .book-slot.scanning::after, .needle.sweep { animation: none !important; }
 }
 
 }
