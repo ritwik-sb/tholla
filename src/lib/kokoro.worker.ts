@@ -203,8 +203,10 @@ async function pump() {
           post({ type: 'audio', id: job.id, blob: encodeWav(hit.samples, hit.rate, job.padMs), cached: true, speechMs: (hit.samples.length / hit.rate) * 1000 })
           continue
         }
+        const t0 = performance.now()
         const clip = await synthesize(model, text, job.voice, job.speed)
-        post({ type: 'audio', id: job.id, blob: encodeWav(clip.samples, clip.rate, job.padMs), cached: false, speechMs: (clip.samples.length / clip.rate) * 1000 })
+        const genMs = performance.now() - t0
+        post({ type: 'audio', id: job.id, blob: encodeWav(clip.samples, clip.rate, job.padMs), cached: false, speechMs: (clip.samples.length / clip.rate) * 1000, genMs })
         if (useCache) speechCache.store(key, clip)
       } catch (e: any) {
         post({ type: 'error', id: job.id, message: e?.message || 'TTS error' })

@@ -368,7 +368,7 @@ body {
   margin-left: -1px;
   background: #ff4b2b;
   box-shadow: 0 0 6px rgba(255,80,40,.9);
-  transition: left .6s ease;
+  transition: left .6s ease, transform .6s ease;
 }
 
 /* ── ivory piano keys ───────────────────────────────────────── */

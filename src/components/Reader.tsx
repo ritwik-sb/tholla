@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { saveProgress, getProgress } from '../lib/storage'
 import { buildReading } from '../lib/reading'
-import { loadKokoro, generate, onKokoroProgress, scheduleRelease, cancelRelease, CancelledError, type Generation } from '../lib/kokoro'
+import { loadKokoro, generate, onKokoroProgress, readAheadSeconds, needsPrebuffer, scheduleRelease, cancelRelease, CancelledError, type Generation } from '../lib/kokoro'
 import { VOICES, DEFAULT_VOICE, getVoice } from '../lib/voices'
 import VoiceAvatar from './VoiceAvatar'
 import { Case, Grille, Icon, Knob, Wordmark } from './radio'
@@ -142,7 +142,6 @@ export default function Reader({ book, onBack }: Props) {
   type Segment = { first: number; last: number; text: string; pad: number; weights: number[] }
   const MERGE_CHARS = 220
   const MAX_MERGE = 6
-  const AHEAD_SECONDS = 25
   const CHARS_PER_SECOND = 15
 
   const segmentAt = (i: number): Segment => {
@@ -183,7 +182,8 @@ export default function Reader({ book, onBack }: Props) {
     if (ahead) {
       let secs = 0
       let next = from.last + 1
-      while (next < sentences.current.length && secs < AHEAD_SECONDS && keep.size < 8) {
+      const aheadSecs = readAheadSeconds()
+      while (next < sentences.current.length && secs < aheadSecs && keep.size < 24) {
         const seg = segmentAt(next)
         keep.add(keyOf(seg))
         audioFor(seg)
@@ -231,6 +231,7 @@ export default function Reader({ book, onBack }: Props) {
 
   // Never race through the book on errors: stay on the sentence and let the user tap Play again.
   const failuresRef = useRef(0)
+  const prebufferRef = useRef(false)
   const failed = (seg: Segment, run: number, e: any) => {
     if (run !== runRef.current) return
     const blocked = e?.name === 'NotAllowedError'
@@ -258,6 +259,14 @@ export default function Reader({ book, onBack }: Props) {
     try {
       const blob = await audioFor(seg).promise
       if (run !== runRef.current || !playingRef.current) return
+      if (prebufferRef.current) {
+        // slow device: have the next segment ready too before the first one starts
+        prebufferRef.current = false
+        if (seg.last + 1 < sentences.current.length) {
+          try { await audioFor(segmentAt(seg.last + 1)).promise } catch {}
+          if (run !== runRef.current || !playingRef.current) return
+        }
+      }
       setKokoroLoading(false)
       const a = player()
       const url = URL.createObjectURL(blob)
@@ -320,6 +329,7 @@ export default function Reader({ book, onBack }: Props) {
     a.src = SILENT_WAV
     a.play().catch(() => {})
     failuresRef.current = 0
+    prebufferRef.current = needsPrebuffer()
     const run = runRef.current
     playingRef.current = true
     setPlaying(true)
@@ -456,7 +466,7 @@ export default function Reader({ book, onBack }: Props) {
           <Grille rows={16} className="hidden md:flex w-44 shrink-0" />
           <div className="dial-window flex-1 min-h-0 flex flex-col">
             <div className="px-5 pt-3" aria-hidden="true">
-              <div className="tuning"><div className="needle" style={{ left: `${progress}%` }} /></div>
+              <div className="tuning"><div className="needle" style={{ left: 0, transform: `translateX(${progress}cqw)` }} /></div>
               <div className="flex justify-between stamp text-[9px] tracking-[.2em] mt-1.5 text-[rgba(246,220,166,.45)]">
                 <span>{chapters.length > 1 ? `Band ${chapterIndex + 1}` : 'Band 1'}</span>
                 <span>{Math.round(progress)}%</span>

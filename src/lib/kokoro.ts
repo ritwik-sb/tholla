@@ -15,6 +15,20 @@ let loadPromise: Promise<void> | null = null
 
 export const kokoroDevice = () => device
 
+// How long this device takes to generate one second of speech (1 = exactly real time).
+// Measured from real sentences, smoothed, and remembered across sessions.
+const RTF_KEY = 'tholla.rtf'
+let rtf: number | null = Number(localStorage.getItem(RTF_KEY)) || null
+export const speedFactor = () => rtf
+
+/** Seconds of audio to keep prepared: little on fast devices, more on slow ones. */
+export function readAheadSeconds() {
+  const r = rtf ?? 0.5
+  return r < 0.4 ? 25 : r < 0.8 ? 45 : 90
+}
+/** Slow devices should prepare a second segment before starting, to avoid an early gap. */
+export const needsPrebuffer = () => (rtf ?? 0) > 0.85
+
 // Remember the model variant picked on this device so it never switches (and re-downloads) later.
 const CHOICE_KEY = 'tholla.model'
 const savedChoice = () => { try { return JSON.parse(localStorage.getItem(CHOICE_KEY) || 'null') } catch { return null } }
@@ -59,7 +73,14 @@ function getWorker() {
       const p = pending.get(m.id)
       if (!p) return
       pending.delete(m.id)
-      if (m.type === 'audio') p.resolve(m.blob)
+      if (m.type === 'audio') {
+        if (m.genMs && m.speechMs > 1500) {
+          const r = m.genMs / m.speechMs
+          rtf = rtf == null ? r : rtf * 0.7 + r * 0.3
+          localStorage.setItem(RTF_KEY, rtf.toFixed(3))
+        }
+        p.resolve(m.blob)
+      }
       else if (m.type === 'ready') {
         device = m.device ?? null
         localStorage.setItem(CHOICE_KEY, JSON.stringify({ device: m.device, dtype: m.dtype }))

@@ -12,7 +12,7 @@ body {
   transform-box: fill-box;
   transform-origin: center;
 }
-.vc .vc-bob { animation: vc-bob 3.2s ease-in-out infinite; animation-delay: var(--vc-delay, 0s); }
+.vc.vc-talking .vc-bob { animation: vc-bob 3.2s ease-in-out infinite; animation-delay: var(--vc-delay, 0s); }
 .vc .vc-eyes { animation: vc-blink 4.6s infinite; animation-delay: var(--vc-delay, 0s); }
 .vc.vc-talking .vc-mouth { animation: vc-talk 0.22s ease-in-out infinite alternate; }
 .vc.vc-talking .vc-bob { animation-duration: 1.1s; }

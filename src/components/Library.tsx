@@ -93,6 +93,15 @@ export default function Library({ onOpen }: Props) {
     }
   }
 
+  // e.g. "Engine · graphics chip · 6.2× real time" — useful when diagnosing slow or broken speech
+  const engineInfo = (() => {
+    const r = Number(localStorage.getItem('tholla.rtf'))
+    let dev = ''
+    try { dev = JSON.parse(localStorage.getItem('tholla.model') || 'null')?.device ?? '' } catch {}
+    if (!r || !dev) return ''
+    return `Engine · ${dev === 'webgpu' ? 'graphics chip' : 'processor'} · ${(1 / r).toFixed(1)}× real time`
+  })()
+
   const minutes = (b: ShelfItem) => Math.ceil((b.words || 1) / 200)
   const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`)
 
@@ -228,6 +237,7 @@ export default function Library({ onOpen }: Props) {
           <p className="stamp text-[9px] engraved-dark text-center">
             Books and voices stay on this device · works offline
           </p>
+          {engineInfo && <p className="stamp text-[9px] engraved-dark text-center">{engineInfo}</p>}
         </div>
       </Case>
     </main>
