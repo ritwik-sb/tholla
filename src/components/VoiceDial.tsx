@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import VoiceAvatar from './VoiceAvatar'
+import { click } from '../lib/clicks'
 import { VOICES } from '../lib/voices'
 import { cancelPendingSamples, getSample, isKokoroLoaded, loadKokoro } from '../lib/kokoro'
 
@@ -54,7 +55,10 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
   // preventScroll: otherwise the browser scrolls the overlay to fit the (mostly off-screen) dial
   useEffect(() => { dialRef.current?.focus({ preventScroll: true }) }, [])
 
+  const firstRender = useRef(true)
   useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return }
+    click('tick')
     if (dragging) navigator.vibrate?.(6)
   }, [selected])
 

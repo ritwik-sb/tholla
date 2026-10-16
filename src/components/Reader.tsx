@@ -494,7 +494,7 @@ export default function Reader({ book, onBack }: Props) {
               onClick={() => setBandOpen(true)}
               aria-haspopup="dialog"
               aria-label={`Chapter: ${chapterTitle}. Choose chapter`}
-              className="panel flex-1 min-w-0 min-h-[44px] px-4 text-left"
+              data-click className="panel flex-1 min-w-0 min-h-[44px] px-4 text-left"
             >
               <span className="block stamp text-[9px] engraved-dark">Band {chapterIndex + 1} of {chapters.length}</span>
               <span className="block truncate stamp text-[13px] tracking-[.08em] engraved">{chapterTitle}</span>
@@ -567,7 +567,7 @@ export default function Reader({ book, onBack }: Props) {
                     type="button"
                     autoFocus={i === chapterIndex}
                     onClick={() => { selectChapter(i); setBandOpen(false) }}
-                    className="w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-black/15"
+                    data-click className="w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-black/15"
                   >
                     <span className={`lamp shrink-0 ${i === chapterIndex ? 'on' : ''}`} aria-hidden="true" />
                     <span className="stamp text-[10px] engraved-dark w-6 shrink-0">{String(i + 1).padStart(2, '0')}</span>

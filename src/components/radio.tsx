@@ -1,4 +1,5 @@
 import { useRef, type ReactNode } from 'react'
+import { click } from '../lib/clicks'
 
 const RIVETS = 14
 
@@ -80,6 +81,7 @@ export function Knob({
   const ref = useRef<HTMLDivElement | null>(null)
   const drag = useRef<{ moved: boolean; x: number; y: number } | null>(null)
   const index = Math.max(0, values.indexOf(value))
+  const change = (v: number) => { if (v !== value) { click('tick'); onChange(v) } }
   const angleOf = (i: number) => -SWEEP / 2 + (SWEEP * i) / (values.length - 1)
 
   const pick = (clientX: number, clientY: number) => {
@@ -87,7 +89,7 @@ export function Knob({
     const deg = (Math.atan2(clientX - (r.left + r.width / 2), (r.top + r.height / 2) - clientY) * 180) / Math.PI
     let best = 0
     values.forEach((_, i) => { if (Math.abs(angleOf(i) - deg) < Math.abs(angleOf(best) - deg)) best = i })
-    if (values[best] !== value) onChange(values[best])
+    change(values[best])
   }
 
   return (
@@ -132,12 +134,12 @@ export function Knob({
           onPointerUp={() => {
             const d = drag.current
             drag.current = null
-            if (d && !d.moved) onChange(values[(index + 1) % values.length])
+            if (d && !d.moved) change(values[(index + 1) % values.length])
           }}
           onPointerCancel={() => { drag.current = null }}
           onKeyDown={e => {
-            if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); onChange(values[Math.min(values.length - 1, index + 1)]) }
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); onChange(values[Math.max(0, index - 1)]) }
+            if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); change(values[Math.min(values.length - 1, index + 1)]) }
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); change(values[Math.max(0, index - 1)]) }
           }}
         >
           <div className="pointer" style={{ transform: `rotate(${angleOf(index)}deg)` }} />

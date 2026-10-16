@@ -114,6 +114,7 @@ export default function Library({ onOpen }: Props) {
         </div>
 
         <label
+          data-click
           className={`panel block px-5 py-5 text-center cursor-pointer transition ${dragging ? 'ring-2 ring-[var(--amber)]' : ''} ${busy ? 'pointer-events-none' : ''}`}
           onDragOver={e => { if (!busy) { e.preventDefault(); setDragging(true) } }}
           onDragLeave={() => setDragging(false)}
