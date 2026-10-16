@@ -3,7 +3,8 @@
 // per voice. Opus via WebCodecs when available (~16 kB/s), otherwise 16-bit PCM.
 // Runs inside the TTS worker.
 
-const DIR = 'speech'
+const DIR = 'speech-v2'
+const OLD_DIRS = ['speech']
 const CAP_BYTES = 600e6
 const MAGIC = 0x54414331 // "TAC1"
 const PCM = 0, OPUS = 1
@@ -12,12 +13,16 @@ const OPUS_BITRATE = 32000
 export type Clip = { samples: Float32Array; rate: number }
 
 let dirPromise: Promise<FileSystemDirectoryHandle> | null = null
-const dir = () => (dirPromise ??= navigator.storage.getDirectory().then(r => r.getDirectoryHandle(DIR, { create: true })))
+const dir = () => (dirPromise ??= navigator.storage.getDirectory().then(async r => {
+  // audio saved by earlier versions may be damaged; drop it
+  for (const old of OLD_DIRS) { try { await r.removeEntry(old, { recursive: true }) } catch {} }
+  return r.getDirectoryHandle(DIR, { create: true })
+}))
 
 export const cacheAvailable = () => typeof navigator !== 'undefined' && !!navigator.storage?.getDirectory
 
 export async function cacheKey(voice: string, text: string) {
-  const bytes = new TextEncoder().encode(`v1|${voice}|${text}`)
+  const bytes = new TextEncoder().encode(`v2|${voice}|${text}`)
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
   return Array.from(hash.subarray(0, 16), b => b.toString(16).padStart(2, '0')).join('')
 }
@@ -31,11 +36,37 @@ function opusSupported(rate: number) {
       if (!AE || !AD) return false
       const enc = await AE.isConfigSupported({ codec: 'opus', sampleRate: rate, numberOfChannels: 1, bitrate: OPUS_BITRATE })
       const dec = await AD.isConfigSupported({ codec: 'opus', sampleRate: rate, numberOfChannels: 1 })
-      return !!(enc.supported && dec.supported)
+      if (!(enc.supported && dec.supported)) return false
+      return await roundTripOk(rate)
     } catch {
       return false
     }
   })())
+}
+
+// Encode and decode a speech-like test tone; compare duration and loudness envelope.
+async function roundTripOk(rate: number) {
+  const n = rate * 2
+  const s = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    const t = i / rate
+    const env = 0.5 + 0.5 * Math.sin(2 * Math.PI * 3 * t) // syllable-like loudness changes
+    s[i] = 0.4 * env * (Math.sin(2 * Math.PI * 220 * t) + 0.5 * Math.sin(2 * Math.PI * 660 * t + 1))
+  }
+  const { chunks, description } = await encodeOpus(s, rate)
+  const out = await decodeOpus(chunks, rate, description, n)
+  const secsIn = n / rate, secsOut = out.samples.length / out.rate
+  if (Math.abs(secsIn - secsOut) > 0.05) return false
+  const envOf = (x: Float32Array, r: number) => {
+    const w = Math.round(r * 0.02), o: number[] = []
+    for (let i = 0; i + w <= x.length; i += w) { let e = 0; for (let j = i; j < i + w; j++) e += x[j] * x[j]; o.push(Math.sqrt(e / w)) }
+    return o
+  }
+  const a = envOf(s, rate), b = envOf(out.samples, out.rate)
+  const m = Math.min(a.length, b.length)
+  let p = 0, qa = 0, qb = 0
+  for (let i = 5; i < m - 5; i++) { p += a[i] * b[i]; qa += a[i] ** 2; qb += b[i] ** 2 }
+  return p / Math.sqrt(qa * qb) > 0.97
 }
 
 async function encodeOpus(samples: Float32Array, rate: number) {

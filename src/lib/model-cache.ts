@@ -30,6 +30,10 @@ export const modelCache = {
     }
   },
 
+  async remove(key: string) {
+    try { await (await dir()).removeEntry(fileName(key)) } catch {}
+  },
+
   async put(key: string, response: Response) {
     const data = new Uint8Array(await response.arrayBuffer())
     const d = await dir()

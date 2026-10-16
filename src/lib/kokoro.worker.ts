@@ -42,8 +42,6 @@ async function gpuAdapter() {
   try { return await (navigator as any).gpu?.requestAdapter() } catch { return null }
 }
 
-const isMobile = () => /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-
 /**
  * Lightest model that keeps up on this device:
  * - phones with WebGPU + f16 shaders: half precision (163 MB, half the memory and heat)
@@ -55,7 +53,7 @@ async function candidates(): Promise<LoadOpts[]> {
   const adapter = await gpuAdapter()
   const list: LoadOpts[] = []
   if (adapter) {
-    if (isMobile() && adapter.features?.has?.('shader-f16')) list.push({ dtype: 'fp16', device: 'webgpu' })
+    // fp16 was tried for phones but produces garbled speech on some mobile GPUs
     list.push({ dtype: 'fp32', device: 'webgpu' })
   }
   list.push({ dtype: 'q8', device: 'wasm' })
@@ -81,6 +79,7 @@ async function healthy(m: KokoroTTS) {
 }
 
 async function pickAndLoad() {
+  if (opfsAvailable()) modelCache.remove(MODEL_URL('fp16')) // no longer used; free 163 MB
   const auto = await candidates()
   const f = forced
   const list = f ? [f, ...auto.filter(c => c.dtype !== f.dtype || c.device !== f.device)] : auto
@@ -196,14 +195,14 @@ async function pump() {
           post({ type: 'audio', id: job.id, blob: encodeWav(new Float32Array(0), 24000, job.padMs + 400), cached: true })
           continue
         }
+        const model = await load()
         const useCache = job.cacheable && job.speed === 1 && speechCache.cacheAvailable()
-        const key = useCache ? await speechCache.cacheKey(job.voice, text) : ''
+        const key = useCache ? await speechCache.cacheKey(`${chosen.device}-${chosen.dtype}|${job.voice}`, text) : ''
         const hit = useCache ? await speechCache.load(key) : null
         if (hit) {
           post({ type: 'audio', id: job.id, blob: encodeWav(hit.samples, hit.rate, job.padMs), cached: true, speechMs: (hit.samples.length / hit.rate) * 1000 })
           continue
         }
-        const model = await load()
         const clip = await synthesize(model, text, job.voice, job.speed)
         post({ type: 'audio', id: job.id, blob: encodeWav(clip.samples, clip.rate, job.padMs), cached: false, speechMs: (clip.samples.length / clip.rate) * 1000 })
         if (useCache) speechCache.store(key, clip)
@@ -219,7 +218,7 @@ async function pump() {
 self.onmessage = (e: MessageEvent) => {
   const m = e.data
   if (m.type === 'config') {
-    if (m.opts?.device && m.opts?.dtype && !tts && !loading) forced = m.opts
+    if (m.opts?.device && m.opts?.dtype && m.opts.dtype !== 'fp16' && !tts && !loading) forced = m.opts
   } else if (m.type === 'load') {
     load().then(
       () => post({ type: 'ready', id: m.id, device: chosen.device, dtype: chosen.dtype }),
