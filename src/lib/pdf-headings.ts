@@ -1,0 +1,1 @@
+export const HEADING_RE = /^(?:(?:chapter|part|section|book|rule)\s+(?:#?\d+|[ivxlc]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|[a-z]+teen|twenty[a-z-]*)\b|(?:prologue|epilogue|introduction|conclusion|afterword)$)/i

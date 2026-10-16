@@ -9,7 +9,11 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      workbox: { maximumFileSizeToCacheInBytes: 30 * 1024 * 1024 },
+      workbox: {
+        maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
+        // the ONNX runtime .wasm and pdf.js .mjs worker must be cached for offline use
+        globPatterns: ['**/*.{js,mjs,css,html,wasm,png,svg,webmanifest}'],
+      },
       includeAssets: ['icon-192.png', 'icon-512.png'],
       manifest: {
         name: 'തൊള്ള',
@@ -27,4 +31,11 @@ export default defineConfig({
     }),
   ],
   worker: { format: 'es' },
+  // cross-origin isolation lets the voice model use multiple CPU threads
+  server: {
+    headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' },
+  },
+  preview: {
+    headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' },
+  },
 })

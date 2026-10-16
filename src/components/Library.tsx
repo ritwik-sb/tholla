@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { listBooks, deleteBook, saveBook } from '../lib/storage'
-import { extractPdf } from '../lib/pdf'
+import { listBooks, deleteBook, saveBook, saveFile, getFile, getProgress, saveProgress, resetProgress } from '../lib/storage'
+import { extractPdf, PARSER_VERSION } from '../lib/pdf'
 import type { Book } from '../types'
 
 interface Props {
@@ -14,10 +14,53 @@ export default function Library({ onOpen }: Props) {
   const [dragging, setDragging] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
-  const refresh = async () => setBooks(await listBooks())
-  useEffect(() => { refresh() }, [])
+  const refresh = async () => {
+    const list = await listBooks()
+    setBooks(list)
+    return list
+  }
 
-  const handleFiles = async (files: FileList | null) => {
+  useEffect(() => {
+    // Re-process books imported with an older parser, when we still have their PDF.
+    refresh().then(async list => {
+      let changed = false
+      for (const b of list) {
+        if ((b.parserVersion ?? 1) >= PARSER_VERSION) continue
+        const pdf = await getFile(b.id)
+        if (!pdf) continue
+        try {
+          await reimport(b, pdf)
+          changed = true
+        } catch {}
+      }
+      if (changed) refresh()
+    })
+  }, [])
+
+  const reimport = async (existing: Book | undefined, file: Blob, name?: string) => {
+    const { text, chapters } = await extractPdf(file as File)
+    const book: Book = {
+      id: existing?.id ?? crypto.randomUUID(),
+      name: existing?.name ?? (name ?? 'Untitled').replace(/\.pdf$/i, ''),
+      text,
+      chapters,
+      createdAt: existing?.createdAt ?? Date.now(),
+      parserVersion: PARSER_VERSION,
+    }
+    if (existing) {
+      // chapters changed: keep the reader on the same chapter title if it still exists
+      const p = await getProgress(existing.id)
+      const title = existing.chapters?.[p.chapterIndex]?.title
+      const idx = title ? chapters.findIndex(c => c.title === title) : -1
+      if (idx > 0) await saveProgress(existing.id, idx, 0)
+      else await resetProgress(existing.id)
+    }
+    await saveBook(book)
+    await saveFile(book.id, file)
+    return book
+  }
+
+  const handleFiles = async (files: FileList | null, target?: Book) => {
     if (!files || !files.length) return
     setBusy(true)
     setError(null)
@@ -29,15 +72,9 @@ export default function Library({ onOpen }: Props) {
           continue
         }
         try {
-          const { text, chapters } = await extractPdf(file)
-          const book: Book = {
-            id: crypto.randomUUID(),
-            name: file.name.replace(/\.pdf$/i, ''),
-            text,
-            chapters,
-            createdAt: Date.now(),
-          }
-          await saveBook(book)
+          const name = file.name.replace(/\.pdf$/i, '')
+          const existing = target ?? books.find(b => b.name === name)
+          await reimport(existing, file, file.name)
         } catch (e: any) {
           errs.push(`${file.name}: ${e?.message || 'failed to import'}`)
         }
@@ -90,6 +127,19 @@ export default function Library({ onOpen }: Props) {
               <div className="text-xs text-slate-300">
                 ~{Math.ceil((b.text.split(/\s+/).filter(Boolean).length || 1) / 200)} min read · {(b.chapters?.length ?? 0)} chapters
               </div>
+              {(b.parserVersion ?? 1) < PARSER_VERSION && (
+                <label className="mt-1 inline-flex items-center gap-1 text-xs text-amber-300 cursor-pointer underline">
+                  Chapters may be wrong — re-add this PDF to fix
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="sr-only"
+                    disabled={busy}
+                    aria-label={`Re-add PDF for ${b.name} to fix chapters`}
+                    onChange={e => handleFiles(e.target.files, b)}
+                  />
+                </label>
+              )}
             </div>
             <button
               className="min-h-[44px] px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"

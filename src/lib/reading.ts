@@ -1,32 +1,51 @@
+import { HEADING_RE } from './pdf-headings'
+
 export interface Reading {
   sentences: string[]
   pauseAfter: number[]
   startIndex: number
 }
 
+// Words that end in a period without ending the sentence.
+const ABBREVIATIONS = new Set([
+  'mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'mt', 'ft', 'vs', 'etc', 'inc', 'ltd', 'co', 'corp',
+  'no', 'vol', 'fig', 'pp', 'ed', 'eds', 'gen', 'col', 'lt', 'sgt', 'capt', 'rev', 'hon', 'jan', 'feb',
+  'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec', 'approx', 'dept', 'est',
+])
+
 function splitSentences(text: string): string[] {
-  const regex = /[^.!?]+[.!?]+(?:["')\]]*)?/g
   const parts: string[] = []
-  let idx = 0
-  for (const m of text.matchAll(regex)) {
-    parts.push(m[0])
-    idx = m.index! + m[0].length
+  // candidate boundary: terminal punctuation, optional closing quotes/brackets, then whitespace
+  const re = /[.!?…]+["”’')\]]*(?=\s+)/g
+  let start = 0
+  for (const m of text.matchAll(re)) {
+    const end = m.index! + m[0].length
+    const before = text.slice(start, m.index!)
+    const word = (before.match(/(\S+)$/)?.[1] ?? '').replace(/^["“‘'(\[]+/, '')
+    const after = text.slice(end).trimStart()
+    if (m[0].startsWith('.')) {
+      // "St." "Dr." — abbreviations; "J.K." / "U.S." — initials; "a.m." — dotted lowercase
+      if (ABBREVIATIONS.has(word.toLowerCase())) continue
+      if (/^([A-Za-z]\.)*[A-Za-z]$/.test(word)) continue
+    }
+    // "e.g. the", "votes?” into", "without it… well" — a lowercase next word means the sentence goes on
+    if (/^[a-z]/.test(after)) continue
+    parts.push(text.slice(start, end))
+    start = end
   }
-  const tail = text.slice(idx).trim()
-  if (tail) parts.push(tail)
+  const tail = text.slice(start)
+  if (tail.trim()) parts.push(tail)
   return parts.map(p => p.trim()).filter(Boolean)
 }
 
-const HEADING_RE = /^(chapter|part|section|prologue|epilogue)\b/i
 const FRONT_MATTER_RE = /^(contents|table of contents|index|preface|foreword|acknowledg|copyright|isbn|dedication)\b/i
 
 function isHeadingPara(p: string): boolean {
   const t = p.trim()
-  if (!t || t.length > 120) return false
-  if (HEADING_RE.test(t)) return true
-  if (/^\d{1,2}\.\s+[A-Z]/.test(t)) return true
-  if (/^[IVXLC]+\.\s/.test(t)) return true
-  return false
+  if (!t || t.length > 80 || /^[a-z]/.test(t)) return false
+  const m = t.match(HEADING_RE)
+  if (m) return /^\s*([:.\-–—]|$)/.test(t.slice(m[0].length))
+  return /^\d{1,2}\.\s+[A-Z][^.!?]*$/.test(t) || /^[IVXLC]+\.\s+[A-Z][^.!?]*$/.test(t)
 }
 
 export function buildReading(text: string): Reading {
@@ -34,46 +53,27 @@ export function buildReading(text: string): Reading {
 
   const sentences: string[] = []
   const pauseAfter: number[] = []
-  const paraStartIdx: number[] = [] // sentence index where each paragraph starts
+  const paraStart: number[] = []
   for (const para of paras) {
-    paraStartIdx.push(sentences.length)
+    paraStart.push(sentences.length)
+    if (FRONT_MATTER_RE.test(para)) continue
     const sents = splitSentences(para)
-    if (!sents.length) continue
-    const isHeading = isHeadingPara(para)
-    const isFront = FRONT_MATTER_RE.test(para)
-    if (isFront) continue // skip front-matter paragraphs entirely
-    for (let i = 0; i < sents.length; i++) {
-      sentences.push(sents[i])
-      const isLast = i === sents.length - 1
-      if (!isLast) { pauseAfter.push(0); continue }
-      // pause length
-      if (isHeading) pauseAfter.push(1200)
-      else pauseAfter.push(700)
-    }
+    const heading = isHeadingPara(para) || (para.length < 80 && !/[.!?]["”’')\]]*$/.test(para))
+    sents.forEach((s, i) => {
+      sentences.push(s)
+      pauseAfter.push(i < sents.length - 1 ? 0 : heading ? 1200 : 700)
+    })
   }
 
-  // Decide where actual reading content starts.
-  // Find a heading paragraph followed by a substantial body paragraph.
+  // For a whole book read as one block, skip to the first real heading near the top.
+  // Chapters split by the importer already start at their heading, so this usually stays 0.
   let startIndex = 0
-  for (let pi = 0; pi < paras.length; pi++) {
-    const para = paras[pi].trim()
-    if (!isHeadingPara(para)) continue
-    // find next non-front-matter, non-heading paragraph with enough words
-    let nextBodyWords = 0
-    for (let q = pi + 1; q < Math.min(pi + 4, paras.length); q++) {
-      const pp = paras[q].trim()
-      if (!pp || isHeadingPara(pp) || FRONT_MATTER_RE.test(pp)) continue
-      nextBodyWords = pp.split(/\s+/).length
-      break
-    }
-    if (nextBodyWords >= 40) {
-      // ensure valid index in filtered sentences mapping not exact due to skipped front matter; search instead
-      const headingText = para.slice(0, 60)
-      const found = sentences.findIndex(x => x.includes(headingText.slice(0, 30)))
-      if (found >= 0) { startIndex = found; break }
-    }
+  const searchLimit = Math.max(3, Math.floor(paras.length * 0.2))
+  for (let pi = 1; pi < Math.min(paras.length, searchLimit); pi++) {
+    if (!isHeadingPara(paras[pi])) continue
+    const body = paras.slice(pi + 1, pi + 4).find(p => !isHeadingPara(p) && p.split(/\s+/).length >= 40)
+    if (body) { startIndex = paraStart[pi]; break }
   }
-
 
   return { sentences, pauseAfter, startIndex }
 }

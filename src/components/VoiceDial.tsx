@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import VoiceAvatar from './VoiceAvatar'
 import { VOICES } from '../lib/voices'
+import { cancelPendingSamples, getSample, isKokoroLoaded, loadKokoro } from '../lib/kokoro'
+
+// One shared element, unlocked by the tap that opens the dial, so mobile
+// browsers allow samples to play after async generation.
+let sampleAudio: HTMLAudioElement | null = null
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='
+
+export function unlockSampleAudio() {
+  if (!sampleAudio) sampleAudio = new Audio()
+  sampleAudio.src = SILENT_WAV
+  sampleAudio.play().catch(() => {})
+}
 
 interface Props {
   value: string
@@ -45,6 +57,55 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
   useEffect(() => {
     if (dragging) navigator.vibrate?.(6)
   }, [selected])
+
+  // Load the voice model while the dial is open, then play a sample when it settles.
+  const [modelReady, setModelReady] = useState(isKokoroLoaded())
+  const [loadPct, setLoadPct] = useState<number | null>(null)
+  const [sampleState, setSampleState] = useState<'idle' | 'loading' | 'playing'>('idle')
+  const sampleToken = useRef(0)
+
+  useEffect(() => {
+    if (modelReady) return
+    let alive = true
+    loadKokoro(p => { if (alive && p.progress != null) setLoadPct(Math.round(p.progress)) })
+      .then(() => alive && setModelReady(true))
+      .catch(() => alive && setLoadPct(null))
+    return () => { alive = false }
+  }, [])
+
+  const playSample = async (v: (typeof VOICES)[number]) => {
+    const token = ++sampleToken.current
+    sampleAudio?.pause()
+    setSampleState('loading')
+    try {
+      const blob = await getSample(v.id, v.name)
+      if (token !== sampleToken.current) return
+      if (!sampleAudio) sampleAudio = new Audio()
+      if (sampleAudio.src.startsWith('blob:')) URL.revokeObjectURL(sampleAudio.src)
+      sampleAudio.src = URL.createObjectURL(blob)
+      sampleAudio.onended = () => token === sampleToken.current && setSampleState('idle')
+      setSampleState('playing')
+      await sampleAudio.play()
+    } catch {
+      if (token === sampleToken.current) setSampleState('idle')
+    }
+  }
+
+  useEffect(() => {
+    if (dragging || !modelReady) return
+    const t = setTimeout(() => {
+      playSample(current).then(() => {
+        // warm up the neighbours so turning the dial one step plays instantly
+        for (const d of [1, -1]) {
+          const v = VOICES[mod(selected + d, N)]
+          getSample(v.id, v.name)
+        }
+      })
+    }, 350)
+    return () => clearTimeout(t)
+  }, [selected, dragging, modelReady])
+
+  useEffect(() => () => { sampleToken.current++; sampleAudio?.pause(); cancelPendingSamples() }, [])
 
   const center = () => {
     const rect = dialRef.current!.getBoundingClientRect()
@@ -134,6 +195,18 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
       >
         <div className="text-3xl font-semibold tracking-tight">{current.name}</div>
         <div className="text-sm text-slate-400">{current.accent} · {current.gender}</div>
+        <button
+          type="button"
+          onClick={() => playSample(current)}
+          disabled={!modelReady}
+          className="pointer-events-auto mt-2 min-h-[36px] px-3 rounded-full text-xs bg-slate-800/80 border border-slate-600 text-slate-200 disabled:opacity-70"
+        >
+          {!modelReady
+            ? `Loading voices${loadPct != null ? ` ${loadPct}%` : '…'}`
+            : sampleState === 'loading' ? 'Preparing sample…'
+            : sampleState === 'playing' ? '♪ Playing sample'
+            : '▶ Hear sample'}
+        </button>
       </div>
 
       {/* pointer notch marking the selected slot */}

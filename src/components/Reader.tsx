@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { saveProgress, getProgress } from '../lib/storage'
 import { buildReading } from '../lib/reading'
-import { loadKokoro, generateSentence, isKokoroLoaded } from '../lib/kokoro'
+import { loadKokoro, generate, isKokoroLoaded, CancelledError, type Generation } from '../lib/kokoro'
 import { VOICES, DEFAULT_VOICE, getVoice } from '../lib/voices'
 import VoiceAvatar from './VoiceAvatar'
-import VoiceDial from './VoiceDial'
+import VoiceDial, { unlockSampleAudio } from './VoiceDial'
 import type { Book } from '../types'
 
 const VOICE_KEY = 'tholla.voice'
@@ -52,6 +52,7 @@ export default function Reader({ book, onBack }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const playerRef = useRef<HTMLAudioElement | null>(null)
   const timerRef = useRef<any>(null)
   const playingRef = useRef(false)
   const runRef = useRef(0)
@@ -71,7 +72,6 @@ export default function Reader({ book, onBack }: Props) {
     idxRef.current = idx
   }, [idx])
 
-  useEffect(() => { speedRef.current = speed }, [speed])
 
   // load progress
   useEffect(() => {
@@ -97,8 +97,9 @@ export default function Reader({ book, onBack }: Props) {
   useEffect(() => {
     return () => {
       runRef.current++
-      audioRef.current?.pause()
-      if (audioRef.current?.src) URL.revokeObjectURL(audioRef.current.src)
+      const a = playerRef.current
+      a?.pause()
+      if (a?.src.startsWith('blob:')) URL.revokeObjectURL(a.src)
       saveProgress(book.id, chapterIndex, idxRef.current)
     }
   }, [book.id])
@@ -109,6 +110,41 @@ export default function Reader({ book, onBack }: Props) {
     const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     el?.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' })
   }, [idx])
+
+  // Prepared audio for upcoming sentences, keyed by voice + chapter + sentence.
+  const cacheRef = useRef(new Map<string, Generation>())
+  const wasPlayingRef = useRef(false)
+  const PREFETCH = 3
+
+  const audioFor = (i: number): Generation | null => {
+    if (i < 0 || i >= sentences.current.length) return null
+    const key = `${voiceRef.current}|${chapterIndexRef.current}|${i}`
+    let g = cacheRef.current.get(key)
+    if (!g) {
+      g = generate(sentences.current[i], voiceRef.current, { padMs: pauses.current[i] || 0 })
+      cacheRef.current.set(key, g)
+    }
+    return g
+  }
+
+  const clearCache = (keepFrom?: number) => {
+    for (const [key, g] of cacheRef.current) {
+      const [v, ch, i] = key.split('|')
+      const keep = keepFrom != null && v === voiceRef.current && Number(ch) === chapterIndexRef.current &&
+        Number(i) >= keepFrom && Number(i) <= keepFrom + PREFETCH
+      if (!keep) { g.cancel(); cacheRef.current.delete(key) }
+    }
+  }
+
+  // One reused element: mobile browsers keep it playing with the screen off.
+  const player = () => {
+    if (!playerRef.current) {
+      const a = new Audio()
+      a.preservesPitch = true
+      playerRef.current = a
+    }
+    return playerRef.current
+  }
 
   const haltAudio = () => {
     runRef.current++
@@ -128,33 +164,44 @@ export default function Reader({ book, onBack }: Props) {
 
   const speak = async (i: number, run: number) => {
     if (run !== runRef.current || !playingRef.current) return
-    if (i >= total) { stop(); return }
+    if (i >= sentences.current.length) { stop(); return }
     setIdx(i); idxRef.current = i
+    clearCache(i)
+    const current = audioFor(i)!
+    // queue the next sentences while this one is generated/played
+    for (let k = 1; k <= PREFETCH; k++) audioFor(i + k)
     try {
-      const blob = await generateSentence(sentences.current[i], voiceRef.current, speedRef.current)
+      const blob = await current.promise
       if (run !== runRef.current || !playingRef.current) return
+      const a = player()
       const url = URL.createObjectURL(blob)
-      const a = new Audio(url)
+      if (a.src.startsWith('blob:')) URL.revokeObjectURL(a.src)
+      a.src = url
+      a.playbackRate = speedRef.current
       audioRef.current = a
+      // the pause after the sentence is already part of the audio, so chain immediately
       a.onended = () => {
-        URL.revokeObjectURL(url)
         if (audioRef.current === a) audioRef.current = null
         if (run !== runRef.current || !playingRef.current) return
-        const d = pauses.current[i] || 0
-        if (d > 0) timerRef.current = setTimeout(() => speak(i + 1, run), d)
-        else speak(i + 1, run)
+        speak(i + 1, run)
       }
-      a.onerror = () => { URL.revokeObjectURL(url); speak(i + 1, run) }
+      a.onerror = () => { if (run === runRef.current) speak(i + 1, run) }
       await a.play()
     } catch (e: any) {
-      if (run !== runRef.current) return
+      if (run !== runRef.current || e instanceof CancelledError) return
       setError(e?.message || 'TTS error')
       speak(i + 1, run)
     }
   }
 
+  // speed is applied at playback, so changing it never needs regeneration
+  useEffect(() => {
+    speedRef.current = speed
+    if (audioRef.current) audioRef.current.playbackRate = speed
+  }, [speed])
+
   const ensureKokoro = async () => {
-    if (kokoroReady) return true
+    if (isKokoroLoaded()) { setKokoroReady(true); return true }
     setKokoroLoading(true)
     try {
       await loadKokoro(p => {
@@ -204,6 +251,7 @@ export default function Reader({ book, onBack }: Props) {
   const selectChapter = (i: number) => {
     stop()
     if (i === chapterIndex) return
+    clearCache()
     pendingIdxRef.current = null
     chapterChangedRef.current = true
     setChapterIndex(i)
@@ -214,6 +262,7 @@ export default function Reader({ book, onBack }: Props) {
     voiceRef.current = id
     setVoice(id)
     localStorage.setItem(VOICE_KEY, id)
+    clearCache()
     if (playingRef.current) {
       // restart the current sentence in the new voice
       haltAudio()
@@ -224,10 +273,56 @@ export default function Reader({ book, onBack }: Props) {
     }
   }
 
+  const openDial = () => {
+    // pause the book so voice samples can be heard
+    wasPlayingRef.current = playingRef.current
+    if (playingRef.current) pause()
+    unlockSampleAudio()
+    setDialOpen(true)
+  }
+
   const closeDial = () => {
     setDialOpen(false)
     requestAnimationFrame(() => voiceButtonRef.current?.focus())
+    if (wasPlayingRef.current) {
+      wasPlayingRef.current = false
+      play()
+    }
   }
+
+  useEffect(() => () => clearCache(), [])
+
+  // Lock-screen / headphone controls
+  const controls = useRef({ play: () => {}, pause: () => {}, next: () => {}, prev: () => {} })
+  controls.current = { play, pause, next: () => jump(idxRef.current + 1), prev: () => jump(idxRef.current - 1) }
+  useEffect(() => {
+    const ms = navigator.mediaSession
+    if (!ms) return
+    ms.metadata = new MediaMetadata({
+      title: chapters[chapterIndex]?.title || book.name,
+      artist: `${character.name} · തൊള്ള`,
+      album: book.name,
+      artwork: [{ src: '/icon-512.png', sizes: '512x512', type: 'image/png' }],
+    })
+    ms.playbackState = playing ? 'playing' : 'paused'
+  }, [book.name, chapterIndex, character.name, playing])
+  useEffect(() => {
+    const ms = navigator.mediaSession
+    if (!ms) return
+    const set = (a: MediaSessionAction, f: (() => void) | null) => { try { ms.setActionHandler(a, f) } catch {} }
+    set('play', () => controls.current.play())
+    set('pause', () => controls.current.pause())
+    set('nexttrack', () => { controls.current.next(); controls.current.play() })
+    set('previoustrack', () => { controls.current.prev(); controls.current.play() })
+    return () => { for (const a of ['play', 'pause', 'nexttrack', 'previoustrack'] as MediaSessionAction[]) set(a, null) }
+  }, [])
+
+  // App warms the engine at startup; reflect when it's ready
+  useEffect(() => {
+    let alive = true
+    loadKokoro().then(() => alive && setKokoroReady(true), () => {})
+    return () => { alive = false }
+  }, [])
 
   return (
     <main className="max-w-4xl mx-auto p-4 md:p-6 pb-44">
@@ -309,9 +404,9 @@ export default function Reader({ book, onBack }: Props) {
               {error
                 ? <span className="text-red-400">{error}</span>
                 : kokoroLoading
-                  ? `Downloading voice model… ${kokoroProgress}`
+                  ? `Preparing voice… ${kokoroProgress}`
                   : !kokoroReady
-                    ? 'First play downloads the voice model (~80MB, one time)'
+                    ? 'Voice engine warming up…'
                     : `Sentence ${Math.min(idx + 1, total)} of ${total}`}
             </span>
           </div>
@@ -320,7 +415,7 @@ export default function Reader({ book, onBack }: Props) {
             <button
               ref={voiceButtonRef}
               type="button"
-              onClick={() => setDialOpen(true)}
+              onClick={openDial}
               aria-haspopup="dialog"
               aria-label={`Voice: ${character.name}. Change voice`}
               className="flex items-center gap-2 min-w-0 rounded-full pr-3 hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-indigo-400"

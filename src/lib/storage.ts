@@ -5,6 +5,7 @@ class AudiobookDB extends Dexie {
   books!: Table<Book, string>
   progress!: Table<{ bookId: string; chapterIndex: number; sentenceIndex: number; updatedAt: number }, string>
   bookmarks!: Table<{ id?: number; bookId: string; sentenceIndex: number; note: string; createdAt: number }, number>
+  files!: Table<{ bookId: string; pdf: Blob }, string>
 
   constructor() {
     super('audiobook')
@@ -13,6 +14,7 @@ class AudiobookDB extends Dexie {
       progress: 'bookId',
       bookmarks: '++id, bookId, sentenceIndex',
     })
+    this.version(4).stores({ files: 'bookId' })
   }
 }
 
@@ -34,6 +36,19 @@ export async function deleteBook(id: string) {
   await db.books.delete(id)
   await db.progress.delete(id)
   await db.bookmarks.where('bookId').equals(id).delete()
+  await db.files.delete(id)
+}
+
+export async function saveFile(bookId: string, pdf: Blob) {
+  await db.files.put({ bookId, pdf })
+}
+
+export async function getFile(bookId: string) {
+  return (await db.files.get(bookId))?.pdf
+}
+
+export async function resetProgress(bookId: string) {
+  await db.progress.delete(bookId)
 }
 
 export async function saveProgress(bookId: string, chapterIndex: number, sentenceIndex: number) {

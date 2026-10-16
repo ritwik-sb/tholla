@@ -9,4 +9,5 @@ export interface Book {
   text: string
   chapters: Chapter[]
   createdAt: number
+  parserVersion?: number
 }
