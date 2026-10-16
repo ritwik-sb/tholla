@@ -34,23 +34,18 @@
   --rust-pits: url('/textures/rust-pits.webp');
   --rust-bloom: url('/textures/rust-bloom.webp');
   --enamel-chips: url('/textures/enamel-chips.webp');
-  --scratches: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><g stroke='white' stroke-opacity='.07' stroke-width='.6' fill='none'><path d='M10 40 L190 22'/><path d='M60 210 L340 180'/><path d='M230 60 L390 95'/><path d='M30 270 L120 240'/><path d='M280 260 L380 230'/><path d='M140 120 L170 140'/></g></svg>");
+  --scratches: url('/textures/scratches.webp');
+  --noise-soft: url('/textures/noise-soft.webp');
 }
 
 /* the "table" the radio sits on */
 body {
   background:
+    var(--noise-soft),
     radial-gradient(120% 80% at 50% 0%, #3a2b1f 0%, #1b130d 55%, #0e0a07 100%);
+  background-attachment: scroll, fixed;
   color: var(--paint);
   font-family: 'Oswald', system-ui, sans-serif;
-}
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image: var(--noise);
-  opacity: .18;
 }
 
 *:focus-visible {
@@ -99,7 +94,6 @@ body::before {
   mask-image: var(--enamel-chips);
   -webkit-mask-size: 800px 1000px;
   mask-size: 800px 1000px;
-  filter: drop-shadow(0 1px 0 rgba(0,0,0,.45));
 }
 .radio-case::after {
   content: '';
@@ -123,8 +117,7 @@ body::before {
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 35%, #000 65%, transparent);
   mask-image: linear-gradient(90deg, transparent, #000 35%, #000 65%, transparent);
   border-radius: 6px 6px 50% 50%;
-  filter: blur(.8px);
-  opacity: .8;
+  opacity: .7;
 }
 
 /* rows of rivets along the top and bottom seams */
@@ -238,8 +231,9 @@ body::before {
   mask-image: var(--wear-heavy);
   -webkit-mask-size: 240px 130px;
   mask-size: 240px 130px;
-  opacity: .82;
-  filter: drop-shadow(0 1px 0 rgba(0,0,0,.35)) sepia(.25);
+  color: #d9c9a2;
+  opacity: .85;
+  text-shadow: 0 1px 0 rgba(0,0,0,.35);
 }
 .engraved-dark {
   /* cut into the metal, unpainted */
@@ -265,9 +259,8 @@ body::before {
   border-radius: 10px;
   padding: .55rem 1.4rem .35rem;
   background:
-    var(--noise),
+    var(--noise-soft),
     linear-gradient(180deg, #4b4842, #36342f);
-  background-blend-mode: overlay, normal;
   box-shadow:
     inset 0 2px 4px rgba(0,0,0,.7),
     inset 0 -1px 0 rgba(255,255,255,.15),
@@ -292,9 +285,8 @@ body::before {
   border-radius: 6px;
   color: #3b2c12;
   background:
-    var(--noise),
+    var(--noise-soft),
     linear-gradient(180deg, var(--brass-hi), var(--brass) 55%, #9d7a3e);
-  background-blend-mode: soft-light, normal;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.5), inset 0 -1px 2px rgba(0,0,0,.35), 0 2px 3px rgba(0,0,0,.45);
   text-shadow: 0 1px 0 rgba(255,240,200,.45);
 }
@@ -359,6 +351,7 @@ body::before {
 /* tuning scale with needle (shows progress through the chapter) */
 .tuning {
   position: relative;
+  container-type: inline-size;
   height: 30px;
   background:
     repeating-linear-gradient(90deg, rgba(246,220,166,.55) 0 1px, transparent 1px 10%),
@@ -551,8 +544,7 @@ body::before {
   height: 60px;
   margin-left: -30px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,190,90,.95), rgba(255,120,30,.45) 40%, transparent 70%);
-  filter: blur(2px);
+  background: radial-gradient(circle, rgba(255,190,90,.9), rgba(255,140,40,.5) 30%, rgba(255,120,30,.18) 55%, transparent 72%);
   transition: opacity .4s;
 }
 .tube-base {
@@ -590,15 +582,15 @@ body::before {
 .flicker { animation: lamp-flicker 1.2s steps(1, end) infinite; }
 .blink { animation: lamp-blink 1s ease-in-out infinite; }
 @keyframes lamp-flicker {
-  0%   { filter: brightness(1); opacity: 1; }
-  12%  { filter: brightness(.35); opacity: .55; }
-  19%  { filter: brightness(1.15); opacity: 1; }
-  41%  { filter: brightness(.6); opacity: .8; }
-  48%  { filter: brightness(1.2); opacity: 1; }
-  73%  { filter: brightness(.25); opacity: .45; }
-  79%  { filter: brightness(1); opacity: 1; }
+  0%   { opacity: 1; }
+  12%  { opacity: .4; }
+  19%  { opacity: 1; }
+  41%  { opacity: .7; }
+  48%  { opacity: 1; }
+  73%  { opacity: .3; }
+  79%  { opacity: 1; }
 }
-@keyframes lamp-blink { 50% { filter: brightness(.3); opacity: .5; } }
+@keyframes lamp-blink { 50% { opacity: .35; } }
 
 .book-slot {
   position: relative;
@@ -621,16 +613,21 @@ body::before {
   border-radius: 999px;
   background: radial-gradient(closest-side, rgba(255,210,130,.95), rgba(255,150,40,.55) 55%, transparent);
   box-shadow: 0 0 12px rgba(255,160,50,.7);
+  left: 0;
+  will-change: transform;
   animation: slot-scan 1.4s ease-in-out infinite alternate;
 }
-@keyframes slot-scan { from { left: -10%; } to { left: 80%; } }
+/* percentages of the light's own width (30% of the slot) */
+@keyframes slot-scan { from { transform: translateX(-33%); } to { transform: translateX(267%); } }
 
-.needle.sweep { animation: needle-sweep 1.8s ease-in-out infinite alternate; }
-@keyframes needle-sweep { from { left: 4%; } to { left: 96%; } }
+.needle.live { transition: none; }
+.needle.sweep { left: 0; will-change: transform; animation: needle-sweep 1.8s ease-in-out infinite alternate; }
+@keyframes needle-sweep { from { transform: translateX(4cqw); } to { transform: translateX(96cqw); } }
 
 @media (prefers-reduced-motion: reduce) {
   .needle, .knob .pointer, .meter .arm { transition: none; }
-  .flicker, .blink, .book-slot.scanning::after, .needle.sweep { animation: none !important; }
+  .flicker, .blink, .book-slot.scanning::after, .needle.live { transition: none; }
+.needle.sweep { left: 0; will-change: transform; animation: none !important; }
 }
 
 }

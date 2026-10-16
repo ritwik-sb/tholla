@@ -186,7 +186,7 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-hidden bg-[radial-gradient(90%_70%_at_50%_100%,rgba(70,45,25,.75),rgba(10,7,4,.92))] backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 overflow-hidden bg-[radial-gradient(90%_70%_at_50%_100%,rgba(70,45,25,.75),rgba(10,7,4,.94))]"
       role="dialog"
       aria-modal="true"
       aria-label="Choose a voice"
@@ -270,7 +270,7 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
                 transition,
               }}
             >
-              <div className={`porthole p-[3px] transition-[filter] ${isSel ? 'drop-shadow-[0_0_12px_rgba(255,170,60,.55)]' : 'brightness-75'}`}>
+              <div className={`porthole p-[3px] transition-opacity ${isSel ? 'shadow-[0_6px_12px_rgba(0,0,0,.6),inset_0_0_0_1px_rgba(0,0,0,.35),0_0_16px_4px_rgba(255,170,60,.45)]' : 'opacity-70'}`}>
                 <span className="glass block"><VoiceAvatar voice={v} size={54} talking={isSel} still={!isSel} /></span>
               </div>
             </div>

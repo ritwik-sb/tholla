@@ -141,7 +141,7 @@ export default function Library({ onOpen }: Props) {
               <span className="dial-window block mt-4 mx-auto max-w-[320px] px-4 pt-2 pb-3">
                 <span className="tuning block">
                   <span
-                    className={`needle ${job?.phase === 'pages' ? '' : 'sweep'}`}
+                    className={`needle ${job?.phase === 'pages' ? 'live' : 'sweep'}`}
                     style={job?.phase === 'pages' && job.total ? { left: `${(job.done / job.total) * 100}%` } : undefined}
                   />
                 </span>
