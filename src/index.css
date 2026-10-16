@@ -2,14 +2,6 @@
 
 body {
   margin: 0;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  background: #0f172a;
-  color: #f1f5f9;
-}
-
-*:focus-visible {
-  outline: 2px solid #818cf8;
-  outline-offset: 2px;
 }
 
 /* Voice characters */

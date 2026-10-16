@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import VoiceAvatar from './VoiceAvatar'
+import { Case, Icon, Wordmark } from './radio'
 import { VOICES } from '../lib/voices'
 import { kokoroDevice, loadKokoro, prefetchVoices } from '../lib/kokoro'
 
@@ -58,65 +59,74 @@ export default function Setup({ onDone }: Props) {
   const pct = Math.round(overall * 100)
   const featured = VOICES.slice(0, 5)
 
+  const heading =
+    phase === 'engine' ? 'Warming up the valves'
+    : phase === 'voices' ? 'Tuning in the voices'
+    : phase === 'done' ? 'Ready to play'
+    : 'Signal lost'
+  const detail =
+    phase === 'engine' ? (bytes.total > 20e6 ? `${mb(bytes.loaded)} of ${mb(bytes.total)}` : 'Starting…')
+    : phase === 'voices' ? `${voicesDone} of ${VOICES.length} voices`
+    : phase === 'done' ? 'Everything is stored on this device · works offline'
+    : error
+
   return (
-    <main className="min-h-dvh max-w-md mx-auto px-6 py-10 flex flex-col">
-      <h1 className="text-3xl font-bold">തൊള്ള</h1>
-      <p className="text-slate-400 mt-1">Setting up your reading voices</p>
+    <main className="min-h-dvh flex justify-center md:p-6">
+      <Case className="w-full max-w-md md:rounded-[30px] px-6 pt-9 pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-6">
+        <Wordmark heading size="text-6xl" />
+        <p className="stamp text-[10px] engraved-dark -mt-3">First-time setup</p>
 
-      <div className="flex -space-x-3 mt-10" aria-hidden="true">
-        {featured.map(v => (
-          <span key={v.id} className="rounded-full ring-4 ring-slate-900">
-            <VoiceAvatar voice={v} size={60} talking={phase === 'done'} />
-          </span>
-        ))}
-      </div>
-
-      <div className="mt-8">
-        <div className="flex items-baseline justify-between">
-          <span className="text-lg font-medium">
-            {phase === 'engine' && 'Downloading the voice engine'}
-            {phase === 'voices' && 'Fetching voices'}
-            {phase === 'done' && 'All set'}
-            {phase === 'error' && 'Download interrupted'}
-          </span>
-          <span className="text-sm text-slate-400 tabular-nums">{pct}%</span>
+        <div className="panel w-full px-6 pt-6 pb-5 flex items-end justify-center gap-8">
+          <div aria-hidden="true">
+            <div className="tube">
+              <div className="filament" />
+              <div className="glow" style={{ opacity: 0.15 + 0.85 * overall }} />
+            </div>
+            <div className="tube-base" />
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <div className="meter w-36 h-24" aria-hidden="true">
+              <div className="absolute inset-x-3 top-3 flex justify-between stamp text-[9px] text-[#4a3b26]">
+                <span>0</span><span>50</span><span>100</span>
+              </div>
+              <div className="arm" style={{ transform: `rotate(${-55 + 110 * overall}deg)` }} />
+            </div>
+            <span className="stamp text-xs engraved tabular-nums" role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+              {pct}%
+            </span>
+          </div>
         </div>
-        <div
-          className="mt-3 h-2 rounded-full bg-slate-800 overflow-hidden"
-          role="progressbar"
-          aria-label="Setup progress"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={pct}
-        >
-          <div className="h-full bg-indigo-500 transition-[width] duration-300" style={{ width: `${pct}%` }} />
+
+        <div className="text-center" aria-live="polite">
+          <p className="stamp text-base engraved">{heading}</p>
+          <p className={`stamp text-[10px] mt-1 ${phase === 'error' ? 'text-red-300' : 'engraved-dark'}`}>{detail}</p>
         </div>
-        <p className="mt-2 text-sm text-slate-400 min-h-[1.25rem]" aria-live="polite">
-          {phase === 'engine' && (bytes.total > 20e6 ? `${mb(bytes.loaded)} of ${mb(bytes.total)}` : 'Starting…')}
-          {phase === 'voices' && `${voicesDone} of ${VOICES.length} voices`}
-          {phase === 'done' && 'Everything is stored on this device. Reading works offline.'}
-          {phase === 'error' && <span className="text-red-400">{error}</span>}
-        </p>
-      </div>
 
-      <ul className="mt-8 space-y-3 text-sm text-slate-300">
-        <li className="flex gap-3"><span aria-hidden="true">⬇</span>A one-time download. Keep this screen open; Wi-Fi recommended.</li>
-        <li className="flex gap-3"><span aria-hidden="true">🔒</span>Your books never leave your device. Voices run locally.</li>
-        <li className="flex gap-3"><span aria-hidden="true">⚡</span>Once set up, reading starts instantly — even offline.</li>
-      </ul>
+        <div className="flex -space-x-3" aria-hidden="true">
+          {featured.map(v => (
+            <span key={v.id} className="porthole p-[3px]">
+              <span className="glass block"><VoiceAvatar voice={v} size={46} talking={phase === 'done'} /></span>
+            </span>
+          ))}
+        </div>
 
-      <div className="mt-auto pt-10">
-        {phase === 'done' && (
-          <button onClick={onDone} className="w-full min-h-[52px] rounded-full bg-indigo-600 hover:bg-indigo-500 font-medium text-lg">
-            Start listening
-          </button>
-        )}
-        {phase === 'error' && (
-          <button onClick={run} className="w-full min-h-[52px] rounded-full bg-indigo-600 hover:bg-indigo-500 font-medium text-lg">
-            Try again
-          </button>
-        )}
-      </div>
+        <ul className="w-full panel px-5 py-4 flex flex-col gap-2">
+          <li className="stamp text-[10px] engraved-dark">· A one-time download — keep this screen open, Wi-Fi recommended</li>
+          <li className="stamp text-[10px] engraved-dark">· Books never leave your device · voices run locally</li>
+          <li className="stamp text-[10px] engraved-dark">· Once set up, reading starts instantly, even offline</li>
+        </ul>
+
+        <div className="mt-auto w-full flex justify-center">
+          {phase === 'done' && (
+            <button type="button" onClick={onDone} className="key dark px-8 min-h-[58px] text-base">
+              <Icon name="play" /> <span className="ml-2">Start listening</span>
+            </button>
+          )}
+          {phase === 'error' && (
+            <button type="button" onClick={run} className="key px-8 min-h-[58px] text-base">Try again</button>
+          )}
+        </div>
+      </Case>
     </main>
   )
 }

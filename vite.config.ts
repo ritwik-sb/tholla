@@ -12,7 +12,7 @@ export default defineConfig({
       workbox: {
         maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
         // the ONNX runtime .wasm and pdf.js .mjs worker must be cached for offline use
-        globPatterns: ['**/*.{js,mjs,css,html,wasm,png,svg,webmanifest}'],
+        globPatterns: ['**/*.{js,mjs,css,html,wasm,png,svg,webmanifest,woff2}'],
       },
       includeAssets: ['icon-192.png', 'icon-512.png'],
       manifest: {

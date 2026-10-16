@@ -182,7 +182,7 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-hidden bg-slate-950/80 backdrop-blur-sm"
+      className="fixed inset-0 z-50 overflow-hidden bg-[radial-gradient(90%_70%_at_50%_100%,rgba(70,45,25,.75),rgba(10,7,4,.92))] backdrop-blur-[2px]"
       role="dialog"
       aria-modal="true"
       aria-label="Choose a voice"
@@ -193,13 +193,15 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
         style={{ bottom: r + 70 }}
         aria-live="polite"
       >
-        <div className="text-3xl font-semibold tracking-tight">{current.name}</div>
-        <div className="text-sm text-slate-400">{current.accent} · {current.gender}</div>
+        <div className="brass inline-block px-6 py-1.5">
+          <div className="stamp text-2xl tracking-[.14em]">{current.name}</div>
+        </div>
+        <div className="stamp text-[10px] mt-2 text-[var(--paint-dim)]">{current.accent} · {current.gender}</div>
         <button
           type="button"
           onClick={() => playSample(current)}
           disabled={!modelReady}
-          className="pointer-events-auto mt-2 min-h-[36px] px-3 rounded-full text-xs bg-slate-800/80 border border-slate-600 text-slate-200 disabled:opacity-70"
+          className="key small pointer-events-auto mt-3"
         >
           {!modelReady
             ? `Loading voices${loadPct != null ? ` ${loadPct}%` : '…'}`
@@ -211,7 +213,7 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
 
       {/* pointer notch marking the selected slot */}
       <div
-        className="absolute left-1/2 -translate-x-1/2 w-0 h-0 border-x-8 border-x-transparent border-t-[10px] border-t-indigo-400 pointer-events-none"
+        className="absolute left-1/2 -translate-x-1/2 w-0 h-0 border-x-8 border-x-transparent border-t-[12px] border-t-[#ff4b2b] drop-shadow-[0_0_6px_rgba(255,80,40,.8)] pointer-events-none"
         style={{ bottom: r + 46 }}
         aria-hidden="true"
       />
@@ -231,19 +233,21 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
         onWheel={onWheel}
         onKeyDown={onKeyDown}
       >
-        <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_30%,#334155,#0f172a_70%)] border border-slate-600 shadow-[0_-10px_60px_rgba(99,102,241,0.25)]" />
+        {/* bakelite dial: knurled rim, brass ring, polished face */}
+        <div className="absolute inset-0 rounded-full shadow-[0_-12px_50px_rgba(0,0,0,.7)]" style={{ background: 'repeating-conic-gradient(#1b130d 0deg 2deg, #3a2a1d 2deg 4deg)' }} />
+        <div className="absolute rounded-full" style={{ inset: 10, background: 'radial-gradient(circle at 50% 22%, #6a4a30, #3b2717 55%, #1e130b 100%)', boxShadow: 'inset 0 2px 3px rgba(255,220,170,.25), inset 0 -10px 30px rgba(0,0,0,.6)' }} />
+        <div className="absolute rounded-full" style={{ inset: d / 2 - r + 36, boxShadow: '0 0 0 3px #6e5426, 0 0 0 5px #e7c98a, 0 0 0 7px #8a6a33', background: 'radial-gradient(circle at 50% 30%, #4a3322, #24170d 70%)' }} />
         <div
           className="absolute inset-2 rounded-full opacity-40"
           style={{
-            background: `repeating-conic-gradient(from ${STEP / 2 - 0.6}deg, #94a3b8 0deg 1.2deg, transparent 1.2deg ${STEP}deg)`,
-            WebkitMask: 'radial-gradient(circle, transparent calc(100% - 14px), #000 calc(100% - 13px))',
-            mask: 'radial-gradient(circle, transparent calc(100% - 14px), #000 calc(100% - 13px))',
+            background: `repeating-conic-gradient(from ${STEP / 2 - 0.6}deg, #e7c98a 0deg 1.2deg, transparent 1.2deg ${STEP}deg)`,
+            WebkitMask: 'radial-gradient(circle, transparent calc(100% - 22px), #000 calc(100% - 21px), #000 calc(100% - 12px), transparent calc(100% - 11px))',
+            mask: 'radial-gradient(circle, transparent calc(100% - 22px), #000 calc(100% - 21px), #000 calc(100% - 12px), transparent calc(100% - 11px))',
             transform: `rotate(${rot}deg)`,
             transition,
           }}
           aria-hidden="true"
         />
-        <div className="absolute rounded-full border border-slate-700/70" style={{ inset: d / 2 - r + 34 }} aria-hidden="true" />
 
         {VOICES.map((v, i) => {
           const a = i * STEP + rot
@@ -262,8 +266,8 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
                 transition,
               }}
             >
-              <div className={`rounded-full transition-shadow ${isSel ? 'ring-4 ring-indigo-400 shadow-lg shadow-indigo-500/40' : 'opacity-70'}`}>
-                <VoiceAvatar voice={v} size={58} talking={isSel} />
+              <div className={`porthole p-[3px] transition-[filter] ${isSel ? 'drop-shadow-[0_0_12px_rgba(255,170,60,.55)]' : 'brightness-75'}`}>
+                <span className="glass block"><VoiceAvatar voice={v} size={54} talking={isSel} /></span>
               </div>
             </div>
           )
@@ -273,7 +277,7 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
       <button
         type="button"
         onClick={commit}
-        className="absolute left-1/2 -translate-x-1/2 bottom-[max(1.5rem,env(safe-area-inset-bottom))] min-h-[44px] px-6 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-full font-medium shadow-lg"
+        className="key dark absolute left-1/2 -translate-x-1/2 bottom-[max(1.5rem,env(safe-area-inset-bottom))] px-6"
       >
         Use {current.name}
       </button>

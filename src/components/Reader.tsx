@@ -4,10 +4,12 @@ import { buildReading } from '../lib/reading'
 import { loadKokoro, generate, isKokoroLoaded, CancelledError, type Generation } from '../lib/kokoro'
 import { VOICES, DEFAULT_VOICE, getVoice } from '../lib/voices'
 import VoiceAvatar from './VoiceAvatar'
+import { Case, Grille, Icon, Knob, Wordmark } from './radio'
 import VoiceDial, { unlockSampleAudio } from './VoiceDial'
 import type { Book } from '../types'
 
 const VOICE_KEY = 'tholla.voice'
+const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2]
 
 interface Props {
   book: Book
@@ -46,6 +48,7 @@ export default function Reader({ book, onBack }: Props) {
     return saved && VOICES.some(v => v.id === saved) ? saved : DEFAULT_VOICE
   })
   const [dialOpen, setDialOpen] = useState(false)
+  const [bandOpen, setBandOpen] = useState(false)
   const [kokoroReady, setKokoroReady] = useState(isKokoroLoaded())
   const [kokoroLoading, setKokoroLoading] = useState(false)
   const [kokoroProgress, setKokoroProgress] = useState('')
@@ -324,137 +327,177 @@ export default function Reader({ book, onBack }: Props) {
     return () => { alive = false }
   }, [])
 
+  const chapterTitle = chapters[chapterIndex]?.title || book.name
+  const progress = total ? ((idx + 0.5) / total) * 100 : 0
+  const statusText = error
+    ? error
+    : kokoroLoading
+      ? `Preparing voice… ${kokoroProgress}`
+      : !kokoroReady
+        ? 'Warming up the valves…'
+        : `Sentence ${Math.min(idx + 1, total)} of ${total}`
+
   return (
-    <main className="max-w-4xl mx-auto p-4 md:p-6 pb-44">
-      <div className="flex items-center gap-3 mb-4">
-        <button onClick={() => { stop(); onBack() }} className="text-slate-300 hover:text-white">← Library</button>
-        <h2 className="text-xl font-semibold truncate min-w-0">{book.name}</h2>
-      </div>
-
-      {chapters.length > 1 && (
-        <div className="mb-4 bg-slate-800 rounded-2xl p-2" aria-label="Chapters">
-          {chapters.map((c, i) => (
-            <details key={i} open={i === chapterIndex} className="border-b border-slate-700 last:border-0">
-              <summary
-                className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700/40 focus-visible:ring-2 focus-visible:ring-indigo-400 rounded"
-                onClick={e => { e.preventDefault(); selectChapter(i) }}
-              >
-                {c.title || `Chapter ${i + 1}`}
-              </summary>
-              {i === chapterIndex && (
-                <p className="px-3 pb-2 text-xs text-slate-400">Reading this chapter. Use the play controls below.</p>
-              )}
-            </details>
-          ))}
-        </div>
-      )}
-
-      {/* Text (windowed for long books) */}
-      <div ref={containerRef} className="bg-slate-900 rounded-2xl p-5 max-h-[60vh] overflow-y-auto leading-7" aria-label="Reading text">
-        {total > 160 && (
-          <p className="text-xs text-slate-400 mb-2">
-            Showing sentences around the current position for performance.{' '}
-            {start > 0 && <button type="button" className="underline focus-visible:ring-2 focus-visible:ring-indigo-400" onClick={() => jump(0)}>Jump to beginning</button>}
-          </p>
-        )}
-        {start > 0 && (
-          <p className="text-xs text-slate-500 mb-2">…{start} sentences above…</p>
-        )}
-        {sentences.current.slice(start, end).map((s, offset) => {
-          const i = start + offset
-          return (
-          <button
-            type="button"
-            key={i}
-            data-i={i}
-            tabIndex={i === idx ? 0 : -1}
-            aria-current={i === idx ? 'true' : undefined}
-            aria-label={`Sentence ${i + 1}`}
-            onClick={() => jump(i)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(i) }
-              if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); jump(i + 1) }
-              if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); jump(i - 1) }
-            }}
-            className={`inline text-left rounded px-1 transition focus-visible:ring-2 focus-visible:ring-indigo-400 ${i === idx ? 'bg-indigo-600/40 text-white' : 'hover:bg-slate-700/60'}`}
-          >
-            {s}{' '}
+    <main className="h-dvh flex justify-center md:p-6">
+      <Case className="w-full max-w-5xl flex flex-col gap-3 md:rounded-[30px] px-4 pt-6 md:px-8 md:pt-8 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        <div className="flex items-center gap-3 px-3">
+          <button type="button" onClick={() => { stop(); onBack() }} className="key small dark" aria-label="Back to bookshelf">
+            <Icon name="back" />
           </button>
-          )
-        })}
-        {end < total && (
-          <p className="text-xs text-slate-500 mt-2">…{total - end} sentences below…</p>
+          <div className="flex-1 min-w-0 flex justify-center"><Wordmark size="text-3xl" /></div>
+          <span className={`lamp ${playing ? 'on' : ''}`} aria-hidden="true" />
+        </div>
+
+        <div className="brass mx-1 px-3 py-1 text-center">
+          <h2 className="stamp text-[11px] truncate">{book.name}</h2>
+        </div>
+
+        <div className="flex-1 min-h-0 flex gap-4">
+          <Grille rows={16} className="hidden md:flex w-44 shrink-0" />
+          <div className="dial-window flex-1 min-h-0 flex flex-col">
+            <div className="px-5 pt-3" aria-hidden="true">
+              <div className="tuning"><div className="needle" style={{ left: `${progress}%` }} /></div>
+              <div className="flex justify-between stamp text-[9px] tracking-[.2em] mt-1.5 text-[rgba(246,220,166,.45)]">
+                <span>{chapters.length > 1 ? `Band ${chapterIndex + 1}` : 'Band 1'}</span>
+                <span>{Math.round(progress)}%</span>
+              </div>
+            </div>
+            <div ref={containerRef} className="reading flex-1 min-h-0 overflow-y-auto px-5 pt-2 pb-6" aria-label="Reading text">
+              {total > 160 && start > 0 && (
+                <p className="stamp text-[10px] text-[rgba(246,220,166,.4)] mb-2">
+                  …{start} sentences above ·{' '}
+                  <button type="button" className="underline" onClick={() => jump(0)}>back to start</button>
+                </p>
+              )}
+              {sentences.current.slice(start, end).map((s, offset) => {
+                const i = start + offset
+                return (
+                  <button
+                    type="button"
+                    key={i}
+                    data-i={i}
+                    tabIndex={i === idx ? 0 : -1}
+                    aria-current={i === idx ? 'true' : undefined}
+                    aria-label={`Sentence ${i + 1}`}
+                    onClick={() => jump(i)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(i) }
+                      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); jump(i + 1) }
+                      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); jump(i - 1) }
+                    }}
+                    className={`sent inline text-left rounded-sm ${i === idx ? 'now' : ''}`}
+                  >
+                    {s}{' '}
+                  </button>
+                )
+              })}
+              {end < total && (
+                <p className="stamp text-[10px] text-[rgba(246,220,166,.4)] mt-2">…{total - end} sentences below…</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <p className={`stamp text-[10px] text-center truncate ${error ? 'text-red-300' : 'engraved-dark'}`} aria-live="polite">
+          {statusText}
+        </p>
+
+        {chapters.length > 1 && (
+          <div className="flex items-center gap-2">
+            <button type="button" className="key small" onClick={() => selectChapter(chapterIndex - 1)} disabled={chapterIndex === 0} aria-label="Previous chapter">
+              <Icon name="prev" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setBandOpen(true)}
+              aria-haspopup="dialog"
+              aria-label={`Chapter: ${chapterTitle}. Choose chapter`}
+              className="panel flex-1 min-w-0 min-h-[44px] px-4 text-left"
+            >
+              <span className="block stamp text-[9px] engraved-dark">Band {chapterIndex + 1} of {chapters.length}</span>
+              <span className="block truncate stamp text-[13px] tracking-[.08em] engraved">{chapterTitle}</span>
+            </button>
+            <button type="button" className="key small" onClick={() => selectChapter(chapterIndex + 1)} disabled={chapterIndex >= chapters.length - 1} aria-label="Next chapter">
+              <Icon name="next" />
+            </button>
+          </div>
         )}
-      </div>
 
-      {chapters.length > 1 && (
-        <details className="mt-4 text-xs text-slate-300">
-          <summary className="cursor-pointer">Chapters detected ({chapters.length})</summary>
-          <span className="block mt-1">{chapters.map(c => c.title).join(' · ')}</span>
-        </details>
-      )}
-      {/* Controls */}
-      <div className="fixed inset-x-0 bottom-0 z-40 bg-slate-900/95 backdrop-blur border-t border-slate-700/70 pb-[env(safe-area-inset-bottom)]">
-        <div className="max-w-4xl mx-auto px-4 pt-2 pb-3">
-          <div className="h-1 rounded-full bg-slate-700/70 overflow-hidden mb-2" aria-hidden="true">
-            <div className="h-full bg-indigo-500 transition-[width]" style={{ width: `${total ? ((idx + 1) / total) * 100 : 0}%` }} />
+        <div className="flex justify-center">
+          <div className="keybed">
+            <button type="button" className="key" onClick={() => jump(idx - 1)} aria-label="Previous sentence"><Icon name="prev" /></button>
+            <button type="button" className={`key dark ${playing ? 'latched' : ''}`} onClick={() => { if (!playing) play() }} disabled={kokoroLoading} aria-label="Play" aria-pressed={playing}>
+              <Icon name="play" />
+            </button>
+            <button type="button" className="key" onClick={pause} aria-label="Pause"><Icon name="pause" /></button>
+            <button type="button" className="key" onClick={() => jump(idx + 1)} aria-label="Next sentence"><Icon name="next" /></button>
+            <button type="button" className="key red" onClick={stop} aria-label="Stop playback"><Icon name="stop" /></button>
           </div>
-          <div className="flex items-center justify-between text-xs text-slate-400 mb-2 min-h-[1rem]" aria-live="polite">
-            <span className="truncate">
-              {error
-                ? <span className="text-red-400">{error}</span>
-                : kokoroLoading
-                  ? `Preparing voice… ${kokoroProgress}`
-                  : !kokoroReady
-                    ? 'Voice engine warming up…'
-                    : `Sentence ${Math.min(idx + 1, total)} of ${total}`}
-            </span>
-          </div>
+        </div>
 
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3 w-full md:max-w-2xl md:mx-auto">
+          <div className="flex flex-col items-center gap-1 w-[120px]">
             <button
               ref={voiceButtonRef}
               type="button"
               onClick={openDial}
               aria-haspopup="dialog"
               aria-label={`Voice: ${character.name}. Change voice`}
-              className="flex items-center gap-2 min-w-0 rounded-full pr-3 hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="porthole"
             >
-              <span className="rounded-full ring-2 ring-slate-600 shrink-0">
-                <VoiceAvatar voice={character} size={52} talking={playing && !kokoroLoading} />
-              </span>
-              <span className="hidden sm:flex flex-col items-start text-left min-w-0">
-                <span className="text-sm font-medium truncate">{character.name}</span>
-                <span className="text-[11px] text-slate-400">{character.accent}</span>
+              <span className="glass block">
+                <VoiceAvatar voice={character} size={68} talking={playing && !kokoroLoading} />
               </span>
             </button>
+            <span className="stamp text-[10px] engraved">Voice · {character.name}</span>
+          </div>
 
-            <div className="flex-1 flex items-center justify-center gap-2">
-              <button onClick={() => jump(idx - 1)} className="min-h-[44px] min-w-[44px] rounded-full hover:bg-slate-800 text-lg focus-visible:ring-2 focus-visible:ring-indigo-400" aria-label="Previous sentence">⏮</button>
-              {!playing ? (
-                <button onClick={play} disabled={kokoroLoading} className="h-14 w-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-xl disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-indigo-400" aria-label="Play">▶</button>
-              ) : (
-                <button onClick={pause} className="h-14 w-14 rounded-full bg-amber-600 hover:bg-amber-500 text-xl focus-visible:ring-2 focus-visible:ring-indigo-400" aria-label="Pause">⏸</button>
-              )}
-              <button onClick={() => jump(idx + 1)} className="min-h-[44px] min-w-[44px] rounded-full hover:bg-slate-800 text-lg focus-visible:ring-2 focus-visible:ring-indigo-400" aria-label="Next sentence">⏭</button>
-              <button onClick={stop} className="min-h-[44px] min-w-[44px] rounded-full hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-indigo-400" aria-label="Stop playback">⏹</button>
-            </div>
+          <Grille rows={5} className="flex-1 self-stretch my-3 max-w-[260px]" />
 
-            <label className="flex items-center gap-1">
-              <span className="sr-only">Speed</span>
-              <select
-                value={speed}
-                onChange={e => setSpeed(Number(e.target.value))}
-                className="min-h-[44px] bg-slate-800 border border-slate-600 rounded-full px-3 text-sm focus-visible:ring-2 focus-visible:ring-indigo-400"
-              >
-                {[0.75, 1, 1.25, 1.5, 1.75, 2].map(s => (
-                  <option key={s} value={s}>{s}×</option>
-                ))}
-              </select>
-            </label>
+          <div className="w-[120px] flex justify-center">
+            <Knob
+              label="Speed"
+              values={SPEEDS}
+              value={speed}
+              onChange={setSpeed}
+              format={v => (v === 1 ? '1×' : String(v).replace(/^0/, ''))}
+              size={70}
+            />
           </div>
         </div>
-      </div>
+      </Case>
+
+      {bandOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-3"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Choose chapter"
+          onClick={e => { if (e.target === e.currentTarget) setBandOpen(false) }}
+          onKeyDown={e => { if (e.key === 'Escape') setBandOpen(false) }}
+        >
+          <Case className="w-full max-w-md rounded-[22px] p-5 pt-7 max-h-[80dvh] flex flex-col">
+            <p className="stamp text-xs engraved text-center mb-3">Select band</p>
+            <ul className="panel p-2 overflow-y-auto">
+              {chapters.map((c, i) => (
+                <li key={i}>
+                  <button
+                    type="button"
+                    autoFocus={i === chapterIndex}
+                    onClick={() => { selectChapter(i); setBandOpen(false) }}
+                    className="w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-black/15"
+                  >
+                    <span className={`lamp shrink-0 ${i === chapterIndex ? 'on' : ''}`} aria-hidden="true" />
+                    <span className="stamp text-[10px] engraved-dark w-6 shrink-0">{String(i + 1).padStart(2, '0')}</span>
+                    <span className={`stamp text-[13px] tracking-[.06em] truncate ${i === chapterIndex ? 'engraved' : 'engraved-dark'}`}>{c.title || `Chapter ${i + 1}`}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button type="button" className="key mt-4 self-center" onClick={() => setBandOpen(false)}>Close</button>
+          </Case>
+        </div>
+      )}
 
       {dialOpen && <VoiceDial value={voice} onSelect={changeVoice} onClose={closeDial} />}
     </main>

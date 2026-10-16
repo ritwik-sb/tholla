@@ -1,0 +1,500 @@
+/* Vintage radio theme. Lives in the components layer so Tailwind utilities can override it. */
+@layer components {
+/* ──────────────────────────────────────────────────────────────
+   Vintage metal radio theme
+   Aged steel case, rivets, speaker slots, engraved + faded paint,
+   ivory piano keys, knurled knobs and an amber glass dial window.
+   ────────────────────────────────────────────────────────────── */
+
+:root {
+  --steel-hi: #9a978c;
+  --steel: #6f6c63;
+  --steel-lo: #3f3d37;
+  --paint: #e9dcbc;
+  --paint-dim: #cdbf9c;
+  --ink: #1d1b17;
+  --rust: 128, 62, 24;
+  --patina: 74, 98, 82;
+  --amber: #ffb54a;
+  --amber-text: #f6dca6;
+  --oxblood: #8e2c22;
+  --brass-hi: #e7c98a;
+  --brass: #b8924f;
+  --brass-lo: #6e5426;
+  --ivory-hi: #fbf4e2;
+  --ivory: #e9dcc0;
+  --ivory-lo: #a8987a;
+
+  /* grain + speckled worn paint, generated with SVG turbulence */
+  --noise: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  /* alpha masks that erase paint in patches: heavy for the name plate, light for small labels */
+  --wear-heavy: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='130'><filter id='w'><feTurbulence type='fractalNoise' baseFrequency='.14 .26' numOctaves='3' seed='7'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 -6 4.55'/></filter><rect width='100%' height='100%' filter='url(%23w)'/></svg>");
+  --wear-light: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='80'><filter id='w'><feTurbulence type='fractalNoise' baseFrequency='.08 .2' numOctaves='3' seed='3'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 -2.6 2.2'/></filter><rect width='100%' height='100%' filter='url(%23w)'/></svg>");
+  --scratches: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><g stroke='white' stroke-opacity='.07' stroke-width='.6' fill='none'><path d='M10 40 L190 22'/><path d='M60 210 L340 180'/><path d='M230 60 L390 95'/><path d='M30 270 L120 240'/><path d='M280 260 L380 230'/><path d='M140 120 L170 140'/></g></svg>");
+}
+
+/* the "table" the radio sits on */
+body {
+  background:
+    radial-gradient(120% 80% at 50% 0%, #3a2b1f 0%, #1b130d 55%, #0e0a07 100%);
+  color: var(--paint);
+  font-family: 'Oswald', system-ui, sans-serif;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: var(--noise);
+  opacity: .35;
+  mix-blend-mode: overlay;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 3px;
+}
+
+/* ── metal case ─────────────────────────────────────────────── */
+.radio-case {
+  position: relative;
+  isolation: isolate;
+  background:
+    var(--scratches),
+    radial-gradient(38% 26% at 88% 12%, rgba(var(--rust), .38), transparent 70%),
+    radial-gradient(30% 22% at 6% 92%, rgba(var(--rust), .45), transparent 72%),
+    radial-gradient(22% 18% at 70% 96%, rgba(var(--patina), .35), transparent 70%),
+    radial-gradient(26% 16% at 12% 30%, rgba(var(--patina), .22), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 3px),
+    linear-gradient(170deg, var(--steel-hi) 0%, var(--steel) 38%, #5a5850 70%, var(--steel-lo) 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,.28),
+    inset 0 0 0 1px rgba(0,0,0,.35),
+    inset 0 -6px 14px rgba(0,0,0,.45),
+    inset 0 10px 30px rgba(255,255,255,.06),
+    0 30px 60px rgba(0,0,0,.6),
+    0 6px 14px rgba(0,0,0,.5);
+}
+.radio-case::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--noise);
+  opacity: .5;
+  mix-blend-mode: multiply;
+  z-index: -1;
+}
+
+/* recessed sub-panel */
+.panel {
+  border-radius: 14px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #57554d, #48463f);
+  box-shadow:
+    inset 0 2px 5px rgba(0,0,0,.6),
+    inset 0 -1px 0 rgba(255,255,255,.12),
+    0 1px 0 rgba(255,255,255,.18);
+}
+
+/* ── screws / rivets ────────────────────────────────────────── */
+.screw {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f1efe6, #a7a497 45%, #55534b 80%);
+  box-shadow: 0 1px 1px rgba(0,0,0,.6), inset 0 -1px 1px rgba(0,0,0,.4), 0 0 0 2px rgba(0,0,0,.18);
+}
+.screw::after {
+  content: '';
+  position: absolute;
+  inset: 7px 2px;
+  border-radius: 1px;
+  background: #3a3832;
+  box-shadow: 0 1px 0 rgba(255,255,255,.35);
+  transform: rotate(var(--turn, 35deg));
+}
+.screw.tl { top: 12px; left: 12px; --turn: 20deg; }
+.screw.tr { top: 12px; right: 12px; --turn: 75deg; }
+.screw.bl { bottom: 12px; left: 12px; --turn: -40deg; }
+.screw.br { bottom: 12px; right: 12px; --turn: 110deg; }
+
+/* ── engraving with faded paint ─────────────────────────────── */
+/* painted lettering, worn away in patches */
+.engraved {
+  color: var(--paint);
+  opacity: .9;
+  text-shadow: 0 -1px 0 rgba(0,0,0,.55), 0 1px 1px rgba(0,0,0,.25);
+  -webkit-mask-image: var(--wear-light);
+  mask-image: var(--wear-light);
+  -webkit-mask-size: 200px 80px;
+  mask-size: 200px 80px;
+}
+/* big lettering: a cut in the metal with old paint filling it */
+.cut-paint { position: relative; display: inline-block; }
+.cut-paint > .cut {
+  color: #26241f;
+  text-shadow: 0 1px 0 rgba(255,255,255,.22), 0 -1px 0 rgba(0,0,0,.7), 0 2px 3px rgba(0,0,0,.35) inset;
+}
+.cut-paint > .paint {
+  position: absolute;
+  inset: 0;
+  color: var(--paint);
+  -webkit-mask-image: var(--wear-heavy);
+  mask-image: var(--wear-heavy);
+  -webkit-mask-size: 240px 130px;
+  mask-size: 240px 130px;
+  opacity: .82;
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,.35)) sepia(.25);
+}
+.engraved-dark {
+  /* cut into the metal, unpainted */
+  color: #2b2924;
+  text-shadow: 0 1px 0 rgba(255,255,255,.28), 0 -1px 0 rgba(0,0,0,.5);
+}
+.stamp {
+  font-family: 'Oswald', system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: .18em;
+  font-weight: 600;
+}
+
+.wordmark {
+  font-family: 'Baloo Chettan 2', 'Oswald', system-ui, sans-serif;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* name plate riveted onto the case */
+.nameplate {
+  position: relative;
+  border-radius: 10px;
+  padding: .55rem 1.4rem .35rem;
+  background:
+    var(--noise),
+    linear-gradient(180deg, #4b4842, #36342f);
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 2px 4px rgba(0,0,0,.7),
+    inset 0 -1px 0 rgba(255,255,255,.15),
+    0 1px 0 rgba(255,255,255,.22);
+}
+.nameplate::before, .nameplate::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #e5e2d6, #77746a 70%);
+  box-shadow: 0 1px 1px rgba(0,0,0,.7);
+}
+.nameplate::before { left: 6px; }
+.nameplate::after { right: 6px; }
+
+/* brass label strip */
+.brass {
+  border-radius: 6px;
+  color: #3b2c12;
+  background:
+    var(--noise),
+    linear-gradient(180deg, var(--brass-hi), var(--brass) 55%, #9d7a3e);
+  background-blend-mode: soft-light, normal;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), inset 0 -1px 2px rgba(0,0,0,.35), 0 2px 3px rgba(0,0,0,.45);
+  text-shadow: 0 1px 0 rgba(255,240,200,.45);
+}
+
+/* ── speaker grille ─────────────────────────────────────────── */
+.grille {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 7px;
+  padding: 12px 14px;
+}
+.slot {
+  height: 9px;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #050504, #1d1a16 70%, #2c2822);
+  box-shadow:
+    inset 0 3px 4px rgba(0,0,0,.95),
+    0 1px 0 rgba(255,255,255,.22),
+    0 -1px 0 rgba(0,0,0,.35);
+}
+
+/* ── glass dial window ──────────────────────────────────────── */
+.dial-window {
+  position: relative;
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(255,170,70,.16), transparent 60%),
+    radial-gradient(80% 60% at 50% 110%, rgba(255,140,40,.10), transparent 70%),
+    linear-gradient(180deg, #1d140b, #120c07);
+  box-shadow:
+    0 0 0 3px #2a2621,
+    0 0 0 5px #8f8b80,
+    0 0 0 6px #3b3833,
+    0 3px 8px 6px rgba(0,0,0,.45),
+    inset 0 0 40px rgba(0,0,0,.85),
+    inset 0 0 18px rgba(255,160,60,.12);
+  color: var(--amber-text);
+}
+.dial-window::after {
+  /* glass reflection */
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(160deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.03) 22%, transparent 40%, transparent 80%, rgba(255,255,255,.04) 100%);
+}
+.reading {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 1.06rem;
+  line-height: 1.85;
+}
+.reading .sent { color: rgba(246,220,166,.72); }
+.reading .sent:hover { color: rgba(246,220,166,.95); }
+.reading .sent.now {
+  color: #fff3d6;
+  text-shadow: 0 0 10px rgba(255,170,60,.65), 0 0 2px rgba(255,190,90,.8);
+  background: linear-gradient(transparent 82%, rgba(255,170,60,.35) 82%);
+}
+
+/* tuning scale with needle (shows progress through the chapter) */
+.tuning {
+  position: relative;
+  height: 30px;
+  background:
+    repeating-linear-gradient(90deg, rgba(246,220,166,.55) 0 1px, transparent 1px 10%),
+    repeating-linear-gradient(90deg, rgba(246,220,166,.28) 0 1px, transparent 1px 2%);
+  background-size: 100% 12px, 100% 6px;
+  background-repeat: no-repeat;
+  background-position: 0 100%, 0 100%;
+}
+.needle {
+  position: absolute;
+  top: 2px;
+  bottom: -6px;
+  width: 2px;
+  margin-left: -1px;
+  background: #ff4b2b;
+  box-shadow: 0 0 6px rgba(255,80,40,.9);
+  transition: left .6s ease;
+}
+
+/* ── ivory piano keys ───────────────────────────────────────── */
+.key {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  min-height: 52px;
+  padding: 0 14px;
+  border-radius: 9px 9px 12px 12px;
+  color: #3a3226;
+  font-family: 'Oswald', system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  background:
+    linear-gradient(180deg, var(--ivory-hi), var(--ivory) 60%, #d8c9a8);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -3px 0 rgba(0,0,0,.08),
+    0 6px 0 var(--ivory-lo),
+    0 7px 0 #4a4234,
+    0 10px 14px rgba(0,0,0,.55);
+  transform: translateY(0);
+  transition: transform .06s ease, box-shadow .06s ease;
+  text-shadow: 0 1px 0 rgba(255,255,255,.7);
+  -webkit-tap-highlight-color: transparent;
+}
+.key:active, .key[aria-pressed='true'], .key.latched {
+  transform: translateY(5px);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 2px 6px rgba(0,0,0,.18),
+    0 1px 0 var(--ivory-lo),
+    0 2px 0 #4a4234,
+    0 3px 5px rgba(0,0,0,.5);
+}
+.key:disabled { opacity: .55; }
+.key svg { width: 22px; height: 22px; }
+.key.dark {
+  color: var(--paint);
+  text-shadow: 0 -1px 0 rgba(0,0,0,.6);
+  background: linear-gradient(180deg, #4a3a2c, #2d221a 65%, #21180f);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.18),
+    0 6px 0 #160f09,
+    0 7px 0 #0b0704,
+    0 10px 14px rgba(0,0,0,.55);
+}
+.key.dark:active, .key.dark.latched {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.1), inset 0 2px 6px rgba(0,0,0,.5), 0 1px 0 #160f09, 0 2px 0 #0b0704, 0 3px 5px rgba(0,0,0,.5);
+}
+.key.red {
+  color: #fbe8d8;
+  text-shadow: 0 -1px 0 rgba(0,0,0,.5);
+  background: linear-gradient(180deg, #b4483a, var(--oxblood) 60%, #6e1f17);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 6px 0 #4c140e, 0 7px 0 #250906, 0 10px 14px rgba(0,0,0,.55);
+}
+.key.red:active { box-shadow: inset 0 2px 6px rgba(0,0,0,.4), 0 1px 0 #4c140e, 0 2px 0 #250906, 0 3px 5px rgba(0,0,0,.5); }
+.key.small { min-width: 40px; min-height: 40px; padding: 0 10px; font-size: .75rem; }
+
+/* key bed the piano keys sit in */
+.keybed {
+  display: flex;
+  gap: 6px;
+  padding: 8px 8px 14px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #1b1915, #2c2924);
+  box-shadow: inset 0 3px 6px rgba(0,0,0,.9), 0 1px 0 rgba(255,255,255,.2);
+}
+
+/* ── knobs ──────────────────────────────────────────────────── */
+.knob {
+  position: relative;
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(from 0deg, #1b1714 0deg 4deg, #3b332b 4deg 8deg);
+  box-shadow: 0 8px 14px rgba(0,0,0,.6), 0 2px 0 rgba(255,255,255,.12), inset 0 0 0 2px rgba(0,0,0,.4);
+  touch-action: none;
+  cursor: grab;
+}
+.knob::before {
+  /* domed cap */
+  content: '';
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, #6b5a49, #3a2e24 55%, #1f1813 100%);
+  box-shadow: inset 0 2px 2px rgba(255,255,255,.18), inset 0 -3px 6px rgba(0,0,0,.6), 0 2px 4px rgba(0,0,0,.6);
+}
+.knob .pointer {
+  position: absolute;
+  inset: 0;
+  transition: transform .25s cubic-bezier(.3,1.4,.5,1);
+}
+.knob .pointer::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 16%;
+  width: 4px;
+  height: 22%;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--paint);
+  box-shadow: 0 0 2px rgba(0,0,0,.6);
+}
+
+/* chrome porthole bezel for the voice character */
+.porthole {
+  position: relative;
+  border-radius: 50%;
+  padding: 5px;
+  background: conic-gradient(from 210deg, #f5f3ea, #8d8a80, #e8e5da, #6c6960, #d8d5ca, #f5f3ea);
+  box-shadow: 0 6px 12px rgba(0,0,0,.6), inset 0 0 0 1px rgba(0,0,0,.35);
+}
+.porthole > .glass {
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: inset 0 3px 8px rgba(0,0,0,.7);
+  position: relative;
+}
+.porthole > .glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(150deg, rgba(255,255,255,.35), transparent 40%);
+  pointer-events: none;
+}
+
+/* pilot lamp */
+.lamp {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #6b3a20, #2c160b);
+  box-shadow: 0 0 0 3px #2a2621, 0 0 0 4px #8f8b80, inset 0 1px 2px rgba(0,0,0,.7);
+  transition: background .3s, box-shadow .3s;
+}
+.lamp.on {
+  background: radial-gradient(circle at 40% 35%, #fff2c4, var(--amber) 45%, #c45a12 100%);
+  box-shadow: 0 0 0 3px #2a2621, 0 0 0 4px #8f8b80, 0 0 14px 4px rgba(255,160,50,.55);
+}
+
+/* vacuum tube used on the setup screen */
+.tube {
+  position: relative;
+  width: 74px;
+  height: 140px;
+  border-radius: 37px 37px 10px 10px;
+  background: linear-gradient(90deg, rgba(255,255,255,.18), rgba(255,255,255,.04) 30%, rgba(255,255,255,.02) 70%, rgba(255,255,255,.14));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.25), inset 0 0 20px rgba(0,0,0,.4);
+}
+.tube .filament {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  width: 26px;
+  height: 70px;
+  margin-left: -13px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #6d675c, #3c3830);
+  box-shadow: inset 0 0 0 2px #2b2823;
+}
+.tube .glow {
+  position: absolute;
+  left: 50%;
+  bottom: 40px;
+  width: 60px;
+  height: 60px;
+  margin-left: -30px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,190,90,.95), rgba(255,120,30,.45) 40%, transparent 70%);
+  filter: blur(2px);
+  transition: opacity .4s;
+}
+.tube-base {
+  width: 84px;
+  height: 22px;
+  margin: -2px auto 0;
+  border-radius: 4px 4px 8px 8px;
+  background: linear-gradient(180deg, #2b241d, #120e0a);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.15);
+}
+
+/* analog meter */
+.meter {
+  position: relative;
+  border-radius: 10px 10px 6px 6px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f3e7c6, #dccba2);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.45), 0 0 0 3px #2a2621, 0 0 0 4px #8f8b80;
+}
+.meter .arm {
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 2px;
+  height: 86%;
+  margin-left: -1px;
+  background: #1f1a14;
+  transform-origin: 50% 100%;
+  transition: transform .4s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .needle, .knob .pointer, .meter .arm { transition: none; }
+}
+
+}

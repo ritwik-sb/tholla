@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { listBooks, deleteBook, saveBook, saveFile, getFile, getProgress, saveProgress, resetProgress } from '../lib/storage'
 import { extractPdf, PARSER_VERSION } from '../lib/pdf'
 import type { Book } from '../types'
+import { Case, Grille, Icon, Wordmark } from './radio'
 
 interface Props {
   onOpen: (book: Book) => void
@@ -87,98 +88,109 @@ export default function Library({ onOpen }: Props) {
     }
   }
 
+  const minutes = (b: Book) => Math.ceil((b.text.split(/\s+/).filter(Boolean).length || 1) / 200)
+  const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`)
+
   return (
-    <main className="max-w-3xl mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-2">തൊള്ള</h1>
-      <p className="text-slate-400 mb-6">Upload a PDF to listen to it like an audiobook. Everything stays in your browser.</p>
+    <main className="min-h-dvh flex justify-center md:p-6">
+      <Case className="w-full max-w-3xl md:rounded-[30px] px-5 pt-8 pb-10 md:px-10 flex flex-col gap-6">
+        <header className="flex flex-col items-center gap-2 pt-2">
+          <Wordmark heading size="text-6xl md:text-7xl" />
+          <p className="stamp text-[10px] engraved-dark text-center">Book receiver · Model 82M · Made for listening</p>
+        </header>
 
-      <label
-        className={`block border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition ${dragging ? 'border-indigo-400 bg-slate-800' : 'border-slate-600 hover:border-slate-400'} ${busy ? 'opacity-50 pointer-events-none' : ''}`}
-        onDragOver={e => { if (!busy) { e.preventDefault(); setDragging(true) } }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={e => { if (!busy) { e.preventDefault(); handleFiles(e.dataTransfer.files) } }}
-      >
-        <input
-          type="file"
-          accept="application/pdf"
-          multiple
-          className="sr-only"
-          disabled={busy}
-          aria-label="Choose PDF files to import"
-          onChange={e => handleFiles(e.target.files)}
-        />
-        <div className="text-lg">{busy ? 'Extracting text…' : (dragging ? 'Drop PDFs here' : 'Click or drop PDFs here')}</div>
-        <div className="text-sm text-slate-400 mt-1">Works offline after first load · PDF only</div>
-      </label>
+        <div className="relative">
+          <Grille rows={7} />
+          <span className="brass stamp text-[10px] absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-3 py-1 whitespace-nowrap">
+            High fidelity
+          </span>
+        </div>
 
-      {error && <div className="mt-4 text-red-400">{error}</div>}
+        <label
+          className={`panel block px-5 py-5 text-center cursor-pointer transition ${dragging ? 'ring-2 ring-[var(--amber)]' : ''} ${busy ? 'opacity-60 pointer-events-none' : ''}`}
+          onDragOver={e => { if (!busy) { e.preventDefault(); setDragging(true) } }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={e => { if (!busy) { e.preventDefault(); handleFiles(e.dataTransfer.files) } }}
+        >
+          <input
+            type="file"
+            accept="application/pdf"
+            multiple
+            className="sr-only"
+            disabled={busy}
+            aria-label="Choose PDF files to import"
+            onChange={e => handleFiles(e.target.files)}
+          />
+          {/* the slot a book is "inserted" into */}
+          <span className="block mx-auto h-3 max-w-[220px] rounded-full bg-gradient-to-b from-black to-[#2a2621] shadow-[inset_0_3px_4px_rgba(0,0,0,.95),0_1px_0_rgba(255,255,255,.2)]" aria-hidden="true" />
+          <span className="block mt-3 stamp text-sm engraved">
+            {busy ? 'Reading the book…' : dragging ? 'Release to insert' : 'Insert a PDF'}
+          </span>
+          <span className="block mt-1 stamp text-[10px] engraved-dark">Tap to choose · or drop it here</span>
+        </label>
 
-      <div className="mt-8 grid gap-3">
-        {books.length === 0 && (
-          <div className="text-center py-10">
-            <p className="text-base font-medium text-slate-200">No books yet</p>
-            <p className="text-sm text-slate-400 mt-1">Choose a PDF above to start listening.</p>
-          </div>
-        )}
-        {books.map(b => (
-          <div key={b.id} className="flex items-center gap-3 bg-slate-800 rounded-xl p-4 overflow-hidden">
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold truncate">{b.name}</div>
-              <div className="text-xs text-slate-300">
-                ~{Math.ceil((b.text.split(/\s+/).filter(Boolean).length || 1) / 200)} min read · {(b.chapters?.length ?? 0)} chapters
+        {error && <p className="stamp text-xs text-red-300 text-center">{error}</p>}
+
+        <section aria-label="Bookshelf" className="flex flex-col gap-3">
+          <h2 className="stamp text-[11px] engraved text-center">Bookshelf</h2>
+          {books.length === 0 && (
+            <div className="panel px-5 py-8 text-center">
+              <p className="stamp text-sm engraved">No books yet</p>
+              <p className="stamp text-[10px] engraved-dark mt-1">Insert a PDF to start listening</p>
+            </div>
+          )}
+          {books.map(b => (
+            <div key={b.id} className="panel flex items-center gap-3 p-3 pl-4">
+              <div className="flex-1 min-w-0">
+                <div className="brass px-3 py-1.5">
+                  <div className="stamp text-[12px] tracking-[.1em] truncate">{b.name}</div>
+                </div>
+                <div className="stamp text-[10px] engraved-dark mt-1.5 px-1">
+                  {hours(minutes(b))} · {b.chapters?.length ?? 0} bands
+                </div>
+                {(b.parserVersion ?? 1) < PARSER_VERSION && (
+                  <label className="mt-1 px-1 inline-flex stamp text-[10px] text-amber-200 underline cursor-pointer">
+                    Chapters may be off — re-insert this PDF
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      className="sr-only"
+                      disabled={busy}
+                      aria-label={`Re-add PDF for ${b.name} to fix chapters`}
+                      onChange={e => handleFiles(e.target.files, b)}
+                    />
+                  </label>
+                )}
               </div>
-              {(b.parserVersion ?? 1) < PARSER_VERSION && (
-                <label className="mt-1 inline-flex items-center gap-1 text-xs text-amber-300 cursor-pointer underline">
-                  Chapters may be wrong — re-add this PDF to fix
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    className="sr-only"
-                    disabled={busy}
-                    aria-label={`Re-add PDF for ${b.name} to fix chapters`}
-                    onChange={e => handleFiles(e.target.files, b)}
-                  />
-                </label>
+              {confirmDelete === b.id ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="key small red"
+                    onClick={async () => { await deleteBook(b.id); setConfirmDelete(null); await refresh() }}
+                  >
+                    Eject
+                  </button>
+                  <button type="button" className="key small" onClick={() => setConfirmDelete(null)}>Keep</button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button type="button" className="key dark" onClick={() => onOpen(b)} aria-label={`Play ${b.name}`}>
+                    <Icon name="play" />
+                  </button>
+                  <button type="button" className="key small" aria-label={`Remove ${b.name}`} onClick={() => setConfirmDelete(b.id)}>
+                    <Icon name="eject" />
+                  </button>
+                </div>
               )}
             </div>
-            <button
-              className="min-h-[44px] px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
-              onClick={() => onOpen(b)}
-            >
-              Open
-            </button>
-            {confirmDelete === b.id ? (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-red-300">Delete?</span>
-                <button
-                  className="min-h-[44px] px-3 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm focus-visible:ring-2 focus-visible:ring-red-400"
-                  onClick={async () => { await deleteBook(b.id); setConfirmDelete(null); await refresh() }}
-                >
-                  Yes
-                </button>
-                <button
-                  className="min-h-[44px] px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm focus-visible:ring-2 focus-visible:ring-indigo-400"
-                  onClick={() => setConfirmDelete(null)}
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                className="min-h-[44px] px-3 py-2 text-slate-300 hover:text-red-400 rounded-lg text-sm focus-visible:ring-2 focus-visible:ring-indigo-400"
-                aria-label={`Delete ${b.name}`}
-                onClick={() => setConfirmDelete(b.id)}
-              >
-                Delete
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
+          ))}
+        </section>
 
-      <div className="mt-10 text-xs text-slate-500">
-        Tip: Install this app (browser menu → "Install") to use it like a native app and listen offline.
-      </div>
+        <p className="stamp text-[9px] engraved-dark text-center mt-auto pt-4">
+          Books and voices stay on this device · Install from the browser menu to use offline
+        </p>
+      </Case>
     </main>
   )
 }
