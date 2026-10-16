@@ -4,6 +4,8 @@ interface Props {
   voice: VoiceCharacter
   size?: number
   talking?: boolean
+  /** no idle animation (e.g. characters around the dial that aren't selected) */
+  still?: boolean
   className?: string
 }
 
@@ -139,7 +141,7 @@ function Beard({ v }: { v: VoiceCharacter }) {
   return <path d="M17 37 Q18 56 32 56 Q46 56 47 37 Q44 45 32 45.5 Q20 45 17 37Z" fill={color} />
 }
 
-export default function VoiceAvatar({ voice: v, size = 56, talking = false, className = '' }: Props) {
+export default function VoiceAvatar({ voice: v, size = 56, talking = false, still = false, className = '' }: Props) {
   // Stagger idle animations so characters don't blink in sync.
   const delay = `${-(v.id.charCodeAt(3) % 7) * 0.53}s`
   return (
@@ -148,7 +150,7 @@ export default function VoiceAvatar({ voice: v, size = 56, talking = false, clas
       width={size}
       height={size}
       aria-hidden="true"
-      className={`vc ${talking ? 'vc-talking' : ''} ${className}`}
+      className={`vc ${talking ? 'vc-talking' : ''} ${still ? 'vc-still' : ''} ${className}`}
       style={{ ['--vc-delay' as string]: delay }}
     >
       <defs>

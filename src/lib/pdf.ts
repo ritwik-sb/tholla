@@ -1,12 +1,10 @@
 import * as pdfjsLib from 'pdfjs-dist'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import type { Chapter } from '../types'
 import { HEADING_RE } from './pdf-headings'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+// This module runs inside import.worker.ts; pdf.js uses its in-thread worker there.
 
-// Bump when extraction changes so previously imported books get re-parsed.
-export const PARSER_VERSION = 2
+export { PARSER_VERSION } from './pdf-version'
 
 export interface Extracted {
   text: string
@@ -136,9 +134,8 @@ const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
 export type ExtractProgress = { phase: 'opening' | 'pages' | 'chapters'; done: number; total: number }
 
-export async function extractPdf(file: File, onProgress?: (p: ExtractProgress) => void): Promise<Extracted> {
+export async function extractPdfData(buf: ArrayBuffer, onProgress?: (p: ExtractProgress) => void): Promise<Extracted> {
   onProgress?.({ phase: 'opening', done: 0, total: 0 })
-  const buf = await file.arrayBuffer()
   const doc = await (pdfjsLib as any).getDocument({ data: buf }).promise
   const numPages: number = doc.numPages
 

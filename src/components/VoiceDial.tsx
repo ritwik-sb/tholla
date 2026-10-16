@@ -267,7 +267,7 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
               }}
             >
               <div className={`porthole p-[3px] transition-[filter] ${isSel ? 'drop-shadow-[0_0_12px_rgba(255,170,60,.55)]' : 'brightness-75'}`}>
-                <span className="glass block"><VoiceAvatar voice={v} size={54} talking={isSel} /></span>
+                <span className="glass block"><VoiceAvatar voice={v} size={54} talking={isSel} still={!isSel} /></span>
               </div>
             </div>
           )

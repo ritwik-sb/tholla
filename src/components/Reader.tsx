@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { saveProgress, getProgress } from '../lib/storage'
 import { buildReading } from '../lib/reading'
-import { loadKokoro, generate, isKokoroLoaded, CancelledError, type Generation } from '../lib/kokoro'
+import { loadKokoro, generate, onKokoroProgress, scheduleRelease, cancelRelease, CancelledError, type Generation } from '../lib/kokoro'
 import { VOICES, DEFAULT_VOICE, getVoice } from '../lib/voices'
 import VoiceAvatar from './VoiceAvatar'
 import { Case, Grille, Icon, Knob, Wordmark } from './radio'
@@ -11,6 +11,27 @@ import type { Book } from '../types'
 const VOICE_KEY = 'tholla.voice'
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2]
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='
+
+const Sentence = memo(function Sentence({ i, text, active, onJump }: { i: number; text: string; active: boolean; onJump: (i: number) => void }) {
+  return (
+    <button
+      type="button"
+      data-i={i}
+      tabIndex={active ? 0 : -1}
+      aria-current={active ? 'true' : undefined}
+      aria-label={`Sentence ${i + 1}`}
+      onClick={() => onJump(i)}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onJump(i) }
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); onJump(i + 1) }
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); onJump(i - 1) }
+      }}
+      className={`sent inline text-left rounded-sm ${active ? 'now' : ''}`}
+    >
+      {text}{' '}
+    </button>
+  )
+})
 
 interface Props {
   book: Book
@@ -50,7 +71,6 @@ export default function Reader({ book, onBack }: Props) {
   })
   const [dialOpen, setDialOpen] = useState(false)
   const [bandOpen, setBandOpen] = useState(false)
-  const [kokoroReady, setKokoroReady] = useState(isKokoroLoaded())
   const [kokoroLoading, setKokoroLoading] = useState(false)
   const [kokoroProgress, setKokoroProgress] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -115,29 +135,70 @@ export default function Reader({ book, onBack }: Props) {
     el?.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' })
   }, [idx])
 
-  // Prepared audio for upcoming sentences, keyed by voice + chapter + sentence.
+  // ── Speech segments ──────────────────────────────────────────
+  // Short sentences in a paragraph are voiced together (each model call has a fixed cost,
+  // and joined speech flows better). The highlight still moves per sentence, timed from
+  // the audio. Segments are built greedily from wherever playback starts.
+  type Segment = { first: number; last: number; text: string; pad: number; weights: number[] }
+  const MERGE_CHARS = 220
+  const MAX_MERGE = 6
+  const AHEAD_SECONDS = 25
+  const CHARS_PER_SECOND = 15
+
+  const segmentAt = (i: number): Segment => {
+    const ss = sentences.current, ps = pauses.current
+    let last = i
+    let text = ss[i]
+    while (
+      last + 1 < ss.length && (ps[last] || 0) === 0 && last - i + 1 < MAX_MERGE &&
+      text.length + 1 + ss[last + 1].length <= MERGE_CHARS
+    ) {
+      last++
+      text += ' ' + ss[last]
+    }
+    const weights: number[] = []
+    for (let k = i; k <= last; k++) weights.push(Math.max(1, ss[k].length))
+    return { first: i, last, text, pad: ps[last] || 0, weights }
+  }
+
+  // Generated audio for upcoming segments, keyed by voice + chapter + first sentence.
   const cacheRef = useRef(new Map<string, Generation>())
   const wasPlayingRef = useRef(false)
-  const PREFETCH = 3
+  const keyOf = (seg: Segment) => `${voiceRef.current}|${chapterIndexRef.current}|${seg.first}|${seg.last}`
 
-  const audioFor = (i: number): Generation | null => {
-    if (i < 0 || i >= sentences.current.length) return null
-    const key = `${voiceRef.current}|${chapterIndexRef.current}|${i}`
+  const audioFor = (seg: Segment): Generation => {
+    const key = keyOf(seg)
     let g = cacheRef.current.get(key)
     if (!g) {
-      g = generate(sentences.current[i], voiceRef.current, { padMs: pauses.current[i] || 0 })
+      g = generate(seg.text, voiceRef.current, { padMs: seg.pad })
       cacheRef.current.set(key, g)
     }
     return g
   }
 
-  const clearCache = (keepFrom?: number) => {
-    for (const [key, g] of cacheRef.current) {
-      const [v, ch, i] = key.split('|')
-      const keep = keepFrom != null && v === voiceRef.current && Number(ch) === chapterIndexRef.current &&
-        Number(i) >= keepFrom && Number(i) <= keepFrom + PREFETCH
-      if (!keep) { g.cancel(); cacheRef.current.delete(key) }
+  /** Keep about AHEAD_SECONDS of audio queued past the current segment; cancel everything else. */
+  const plan = (from: Segment, ahead = true) => {
+    const keep = new Set<string>([keyOf(from)])
+    audioFor(from)
+    if (ahead) {
+      let secs = 0
+      let next = from.last + 1
+      while (next < sentences.current.length && secs < AHEAD_SECONDS && keep.size < 8) {
+        const seg = segmentAt(next)
+        keep.add(keyOf(seg))
+        audioFor(seg)
+        secs += seg.text.length / CHARS_PER_SECOND + seg.pad / 1000
+        next = seg.last + 1
+      }
     }
+    for (const [key, g] of cacheRef.current) {
+      if (!keep.has(key)) { g.cancel(); cacheRef.current.delete(key) }
+    }
+  }
+
+  const clearCache = () => {
+    for (const g of cacheRef.current.values()) g.cancel()
+    cacheRef.current.clear()
   }
 
   // One reused element: mobile browsers keep it playing with the screen off.
@@ -163,40 +224,41 @@ export default function Reader({ book, onBack }: Props) {
     playingRef.current = false
     setPlaying(false)
     haltAudio()
-    saveProgress(book.id, chapterIndex, idxRef.current)
+    clearCache()
+    scheduleRelease(10 * 60e3)
+    saveProgress(book.id, chapterIndexRef.current, idxRef.current)
   }
 
   // Never race through the book on errors: stay on the sentence and let the user tap Play again.
   const failuresRef = useRef(0)
-  const failed = (i: number, run: number, e: any) => {
+  const failed = (seg: Segment, run: number, e: any) => {
     if (run !== runRef.current) return
     const blocked = e?.name === 'NotAllowedError'
     failuresRef.current++
-    if (!blocked && failuresRef.current < 2 && i + 1 < sentences.current.length) {
-      // one unreadable sentence: skip it once
-      speak(i + 1, run)
+    if (!blocked && failuresRef.current < 2 && seg.last + 1 < sentences.current.length) {
+      // one unreadable segment: skip it once
+      speak(seg.last + 1, run)
       return
     }
     failuresRef.current = 0
     playingRef.current = false
     setPlaying(false)
     haltAudio()
-    setIdx(i); idxRef.current = i
+    setIdx(seg.first); idxRef.current = seg.first
     setError(blocked ? 'Playback paused by the browser. Tap Play to continue.' : `Couldn't play this sentence (${e?.message || 'voice error'}). Tap Play to retry.`)
-    saveProgress(book.id, chapterIndexRef.current, i)
+    saveProgress(book.id, chapterIndexRef.current, seg.first)
   }
 
   const speak = async (i: number, run: number) => {
     if (run !== runRef.current || !playingRef.current) return
     if (i >= sentences.current.length) { stop(); return }
+    const seg = segmentAt(i)
     setIdx(i); idxRef.current = i
-    clearCache(i)
-    const current = audioFor(i)!
-    // queue the next sentences while this one is generated/played
-    for (let k = 1; k <= PREFETCH; k++) audioFor(i + k)
+    plan(seg)
     try {
-      const blob = await current.promise
+      const blob = await audioFor(seg).promise
       if (run !== runRef.current || !playingRef.current) return
+      setKokoroLoading(false)
       const a = player()
       const url = URL.createObjectURL(blob)
       const old = a.src
@@ -204,18 +266,27 @@ export default function Reader({ book, onBack }: Props) {
       if (old.startsWith('blob:')) URL.revokeObjectURL(old)
       a.playbackRate = speedRef.current
       audioRef.current = a
-      // the pause after the sentence is already part of the audio, so chain immediately
+      // move the highlight through the merged sentences in proportion to their length
+      a.ontimeupdate = seg.last > seg.first ? () => {
+        const speech = Math.max(0.1, a.duration - seg.pad / 1000)
+        const target = Math.min(1, a.currentTime / speech) * seg.weights.reduce((x, y) => x + y, 0)
+        let k = 0, acc = seg.weights[0]
+        while (acc < target && k < seg.weights.length - 1) acc += seg.weights[++k]
+        const at = seg.first + k
+        if (at !== idxRef.current) { idxRef.current = at; setIdx(at) }
+      } : null
+      // the pause after the segment is already part of the audio, so chain immediately
       a.onended = () => {
         if (audioRef.current === a) audioRef.current = null
         if (run !== runRef.current || !playingRef.current) return
-        speak(i + 1, run)
+        speak(seg.last + 1, run)
       }
-      a.onerror = () => { if (run === runRef.current) failed(i, run, new Error('Audio could not be played')) }
+      a.onerror = () => { if (run === runRef.current) failed(seg, run, new Error('Audio could not be played')) }
       await a.play()
       failuresRef.current = 0
     } catch (e: any) {
       if (run !== runRef.current || e instanceof CancelledError) return
-      failed(i, run, e)
+      failed(seg, run, e)
     }
   }
 
@@ -225,24 +296,17 @@ export default function Reader({ book, onBack }: Props) {
     if (audioRef.current) audioRef.current.playbackRate = speed
   }, [speed])
 
-  const ensureKokoro = async () => {
-    if (isKokoroLoaded()) { setKokoroReady(true); return true }
+  // Loading status: the model loads on demand inside the worker (only when audio isn't saved yet)
+  useEffect(() => onKokoroProgress(p => {
+    if (p.status === 'ready' || p.status === 'done') return
     setKokoroLoading(true)
-    try {
-      await loadKokoro(p => {
-        setKokoroProgress(p.status + (p.progress ? ` ${Math.round(p.progress)}%` : '') + (p.file ? ` ${p.file}` : ''))
-      })
-      setKokoroReady(true)
-      return true
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load voice model')
-      return false
-    } finally {
-      setKokoroLoading(false)
-    }
-  }
+    setKokoroProgress(p.progress != null ? `${Math.round(p.progress)}%` : '')
+  }), [])
+
+  const IDLE_RELEASE_MS = 10 * 60e3
 
   const play = async () => {
+    cancelRelease()
     // resume if paused mid-sentence
     if (audioRef.current && audioRef.current.paused && idxRef.current === idx) {
       try { await audioRef.current.play(); playingRef.current = true; setPlaying(true); return } catch {}
@@ -252,6 +316,7 @@ export default function Reader({ book, onBack }: Props) {
     const a = player()
     a.onended = null
     a.onerror = null
+    a.ontimeupdate = null
     a.src = SILENT_WAV
     a.play().catch(() => {})
     failuresRef.current = 0
@@ -259,11 +324,6 @@ export default function Reader({ book, onBack }: Props) {
     playingRef.current = true
     setPlaying(true)
     setError(null)
-    if (!(await ensureKokoro())) {
-      playingRef.current = false
-      setPlaying(false)
-      return
-    }
     speak(idxRef.current, run)
   }
 
@@ -271,6 +331,9 @@ export default function Reader({ book, onBack }: Props) {
     playingRef.current = false
     setPlaying(false)
     audioRef.current?.pause()
+    // don't keep the GPU busy preparing audio nobody is listening to
+    plan(segmentAt(idxRef.current), false)
+    scheduleRelease(IDLE_RELEASE_MS)
     saveProgress(book.id, chapterIndex, idxRef.current)
   }
 
@@ -279,6 +342,11 @@ export default function Reader({ book, onBack }: Props) {
     const v = Math.max(0, Math.min(total - 1, i))
     setIdx(v); idxRef.current = v
   }
+
+  // stable callback so memoised sentences don't re-render on every highlight move
+  const jumpRef = useRef(jump)
+  jumpRef.current = jump
+  const jumpStable = useCallback((i: number) => jumpRef.current(i), [])
 
   const selectChapter = (i: number) => {
     stop()
@@ -322,7 +390,8 @@ export default function Reader({ book, onBack }: Props) {
     }
   }
 
-  useEffect(() => () => clearCache(), [])
+  // leaving the reader: drop queued work and free the model shortly after
+  useEffect(() => () => { clearCache(); scheduleRelease(60e3) }, [])
 
   // Lock-screen / headphone controls
   const controls = useRef({ play: () => {}, pause: () => {}, next: () => {}, prev: () => {} })
@@ -349,10 +418,14 @@ export default function Reader({ book, onBack }: Props) {
     return () => { for (const a of ['play', 'pause', 'nexttrack', 'previoustrack'] as MediaSessionAction[]) set(a, null) }
   }, [])
 
-  // App warms the engine at startup; reflect when it's ready
+  // Opening a book warms the engine so the first new sentence is quick; it's released if unused.
   useEffect(() => {
     let alive = true
-    loadKokoro().then(() => alive && setKokoroReady(true), () => {})
+    loadKokoro().then(() => {
+      if (!alive) return
+      setKokoroLoading(false)
+      if (!playingRef.current) scheduleRelease(10 * 60e3)
+    }, () => {})
     return () => { alive = false }
   }, [])
 
@@ -360,11 +433,9 @@ export default function Reader({ book, onBack }: Props) {
   const progress = total ? ((idx + 0.5) / total) * 100 : 0
   const statusText = error
     ? error
-    : kokoroLoading
-      ? `Preparing voice… ${kokoroProgress}`
-      : !kokoroReady
-        ? 'Warming up the valves…'
-        : `Sentence ${Math.min(idx + 1, total)} of ${total}`
+    : kokoroLoading && playing
+      ? `Warming up the valves… ${kokoroProgress}`
+      : `Sentence ${Math.min(idx + 1, total)} of ${total}`
 
   return (
     <main className="h-dvh flex justify-center md:p-6">
@@ -398,27 +469,9 @@ export default function Reader({ book, onBack }: Props) {
                   <button type="button" className="underline" onClick={() => jump(0)}>back to start</button>
                 </p>
               )}
-              {sentences.current.slice(start, end).map((s, offset) => {
+              {sentences.current.slice(start, end).map((text, offset) => {
                 const i = start + offset
-                return (
-                  <button
-                    type="button"
-                    key={i}
-                    data-i={i}
-                    tabIndex={i === idx ? 0 : -1}
-                    aria-current={i === idx ? 'true' : undefined}
-                    aria-label={`Sentence ${i + 1}`}
-                    onClick={() => jump(i)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(i) }
-                      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); jump(i + 1) }
-                      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); jump(i - 1) }
-                    }}
-                    className={`sent inline text-left rounded-sm ${i === idx ? 'now' : ''}`}
-                  >
-                    {s}{' '}
-                  </button>
-                )
+                return <Sentence key={i} i={i} text={text} active={i === idx} onJump={jumpStable} />
               })}
               {end < total && (
                 <p className="stamp text-[10px] text-[rgba(246,220,166,.4)] mt-2">…{total - end} sentences below…</p>
@@ -455,7 +508,7 @@ export default function Reader({ book, onBack }: Props) {
         <div className="flex justify-center">
           <div className="keybed">
             <button type="button" className="key" onClick={() => jump(idx - 1)} aria-label="Previous sentence"><Icon name="prev" /></button>
-            <button type="button" className={`key dark ${playing ? 'latched' : ''}`} onClick={() => { if (!playing) play() }} disabled={kokoroLoading} aria-label="Play" aria-pressed={playing}>
+            <button type="button" className={`key dark ${playing ? 'latched' : ''}`} onClick={() => { if (!playing) play() }} aria-label="Play" aria-pressed={playing}>
               <Icon name="play" />
             </button>
             <button type="button" className="key" onClick={pause} aria-label="Pause"><Icon name="pause" /></button>

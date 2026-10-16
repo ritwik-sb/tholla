@@ -5,6 +5,7 @@ body {
 }
 
 /* Voice characters */
+.vc.vc-still .vc-bob, .vc.vc-still .vc-eyes, .vc.vc-still .vc-mouth { animation: none; }
 .vc .vc-bob,
 .vc .vc-eyes,
 .vc .vc-mouth {

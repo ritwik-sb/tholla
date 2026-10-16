@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { listBooks, deleteBook, saveBook, saveFile, getFile, getProgress, saveProgress, resetProgress } from '../lib/storage'
-import { extractPdf, PARSER_VERSION, type ExtractProgress } from '../lib/pdf'
+import { listShelf, getBook, deleteBook, saveBook, saveFile, getFile, getProgress, saveProgress, resetProgress, type ShelfItem } from '../lib/storage'
+import { extractPdf, PARSER_VERSION, type ExtractProgress } from '../lib/pdf-client'
 import type { Book } from '../types'
 import { Case, Grille, Icon, SerialPlate, Wordmark } from './radio'
 import InstallButton from './InstallButton'
@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default function Library({ onOpen }: Props) {
-  const [books, setBooks] = useState<Book[]>([])
+  const [books, setBooks] = useState<ShelfItem[]>([])
   const [busy, setBusy] = useState(false)
   const [job, setJob] = useState<(ExtractProgress & { name: string; index: number; count: number }) | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -18,7 +18,7 @@ export default function Library({ onOpen }: Props) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const refresh = async () => {
-    const list = await listBooks()
+    const list = await listShelf()
     setBooks(list)
     return list
   }
@@ -28,11 +28,11 @@ export default function Library({ onOpen }: Props) {
     refresh().then(async list => {
       let changed = false
       for (const b of list) {
-        if ((b.parserVersion ?? 1) >= PARSER_VERSION) continue
+        if (b.parserVersion >= PARSER_VERSION) continue
         const pdf = await getFile(b.id)
         if (!pdf) continue
         try {
-          await reimport(b, pdf)
+          await reimport(await getBook(b.id), pdf)
           changed = true
         } catch {}
       }
@@ -41,7 +41,7 @@ export default function Library({ onOpen }: Props) {
   }, [])
 
   const reimport = async (existing: Book | undefined, file: Blob, name?: string, onProgress?: (p: ExtractProgress) => void) => {
-    const { text, chapters } = await extractPdf(file as File, onProgress)
+    const { text, chapters } = await extractPdf(file, onProgress)
     const book: Book = {
       id: existing?.id ?? crypto.randomUUID(),
       name: existing?.name ?? (name ?? 'Untitled').replace(/\.pdf$/i, ''),
@@ -63,7 +63,7 @@ export default function Library({ onOpen }: Props) {
     return book
   }
 
-  const handleFiles = async (files: FileList | null, target?: Book) => {
+  const handleFiles = async (files: FileList | null, target?: ShelfItem) => {
     if (!files || !files.length) return
     setBusy(true)
     setError(null)
@@ -77,7 +77,8 @@ export default function Library({ onOpen }: Props) {
         }
         try {
           const name = file.name.replace(/\.pdf$/i, '')
-          const existing = target ?? books.find(b => b.name === name)
+          const match = target ?? books.find(b => b.name === name)
+          const existing = match ? await getBook(match.id) : undefined
           await reimport(existing, file, file.name, p => setJob({ ...p, name, index, count: list.length }))
         } catch (e: any) {
           errs.push(`${file.name}: ${e?.message || 'failed to import'}`)
@@ -92,7 +93,7 @@ export default function Library({ onOpen }: Props) {
     }
   }
 
-  const minutes = (b: Book) => Math.ceil((b.text.split(/\s+/).filter(Boolean).length || 1) / 200)
+  const minutes = (b: ShelfItem) => Math.ceil((b.words || 1) / 200)
   const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`)
 
   return (
@@ -180,9 +181,9 @@ export default function Library({ onOpen }: Props) {
                   <div className="stamp text-[12px] tracking-[.1em] truncate">{b.name}</div>
                 </div>
                 <div className="stamp text-[10px] engraved-dark mt-1.5 px-1">
-                  {hours(minutes(b))} · {b.chapters?.length ?? 0} bands
+                  {hours(minutes(b))} · {b.chapters} bands
                 </div>
-                {(b.parserVersion ?? 1) < PARSER_VERSION && (
+                {b.parserVersion < PARSER_VERSION && (
                   <label className="mt-1 px-1 inline-flex stamp text-[10px] text-amber-200 underline cursor-pointer">
                     Chapters may be off — re-insert this PDF
                     <input
@@ -209,7 +210,7 @@ export default function Library({ onOpen }: Props) {
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <button type="button" className="key dark" onClick={() => onOpen(b)} aria-label={`Play ${b.name}`}>
+                  <button type="button" className="key dark" onClick={async () => { const full = await getBook(b.id); if (full) onOpen(full) }} aria-label={`Play ${b.name}`}>
                     <Icon name="play" />
                   </button>
                   <button type="button" className="key small" aria-label={`Remove ${b.name}`} onClick={() => setConfirmDelete(b.id)}>

@@ -2,63 +2,107 @@
 import { KokoroTTS } from 'kokoro-js'
 import { env } from '@huggingface/transformers'
 import { modelCache, opfsAvailable } from './model-cache'
+import * as speechCache from './audio-cache'
 
 if (opfsAvailable()) {
   env.useCustomCache = true
   env.customCache = modelCache
 }
+// CPU fallback: leave a core for the UI and the audio thread
+const cores = navigator.hardwareConcurrency || 2
+;(env.backends.onnx as any).wasm.numThreads = Math.max(1, Math.min(4, cores - 1))
 
-type Job = { id: number; text: string; voice: string; speed: number; padMs: number }
+type Job = { id: number; text: string; voice: string; speed: number; padMs: number; cacheable: boolean }
 
 let tts: KokoroTTS | null = null
 let loading: Promise<KokoroTTS> | null = null
 const queue: Job[] = []
 let running = false
 
-const post = (msg: unknown) => (self as unknown as DedicatedWorkerGlobalScope).postMessage(msg)
+const post = (msg: unknown, transfer: Transferable[] = []) =>
+  (self as unknown as DedicatedWorkerGlobalScope).postMessage(msg, transfer)
 
-type LoadOpts = { dtype: 'fp32' | 'fp16' | 'q8' | 'q4' | 'q4f16'; device: 'wasm' | 'webgpu' }
+type Dtype = 'fp32' | 'fp16' | 'q8'
+type LoadOpts = { dtype: Dtype; device: 'wasm' | 'webgpu' }
 let forced: LoadOpts | null = null
-let device: LoadOpts['device'] = 'wasm'
+let chosen: LoadOpts = { dtype: 'q8', device: 'wasm' }
+
+const REPO = 'onnx-community/Kokoro-82M-v1.0-ONNX'
+const MODEL_URL = (d: Dtype) =>
+  `https://huggingface.co/${REPO}/resolve/main/onnx/model${d === 'fp32' ? '' : d === 'fp16' ? '_fp16' : '_quantized'}.onnx`
 
 const fromPretrained = (o: LoadOpts) =>
-  KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+  KokoroTTS.from_pretrained(REPO, {
     dtype: o.dtype,
     device: o.device,
     progress_callback: (p: any) => post({ type: 'progress', status: p.status, progress: p.progress, file: p.file, loaded: p.loaded, total: p.total }),
   })
 
-export async function hasWebGPU() {
-  try {
-    return !!(await (navigator as any).gpu?.requestAdapter())
-  } catch {
-    return false
-  }
+async function gpuAdapter() {
+  try { return await (navigator as any).gpu?.requestAdapter() } catch { return null }
 }
 
-// WebGPU (full precision) generates ~6x faster than real time; the CPU build is
-// barely real time, so it's only a fallback.
-async function pickAndLoad() {
-  if (forced) { device = forced.device; return fromPretrained(forced) }
-  if (await hasWebGPU()) {
-    try {
-      const m = await fromPretrained({ dtype: 'fp32', device: 'webgpu' })
-      device = 'webgpu'
-      return m
-    } catch {}
+const isMobile = () => /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+
+/**
+ * Lightest model that keeps up on this device:
+ * - phones with WebGPU + f16 shaders: half precision (163 MB, half the memory and heat)
+ * - other WebGPU devices: full precision (fastest and most robust)
+ * - no WebGPU: 8-bit model on the CPU
+ * A variant already on disk wins over downloading a "better" one.
+ */
+async function candidates(): Promise<LoadOpts[]> {
+  const adapter = await gpuAdapter()
+  const list: LoadOpts[] = []
+  if (adapter) {
+    if (isMobile() && adapter.features?.has?.('shader-f16')) list.push({ dtype: 'fp16', device: 'webgpu' })
+    list.push({ dtype: 'fp32', device: 'webgpu' })
   }
-  device = 'wasm'
-  return fromPretrained({ dtype: 'q8', device: 'wasm' })
+  list.push({ dtype: 'q8', device: 'wasm' })
+  if (opfsAvailable()) {
+    for (const c of list) {
+      if (await modelCache.match(MODEL_URL(c.dtype))) return [c, ...list.filter(x => x !== c)]
+    }
+  }
+  return list
+}
+
+// A broken GPU path (some mobile drivers with f16) returns NaN or silence: detect and fall back.
+async function healthy(m: KokoroTTS) {
+  const a = await m.generate('Ready.', { voice: 'af_heart' })
+  const s = a.audio as Float32Array
+  let peak = 0
+  for (let i = 0; i < s.length; i++) {
+    const x = s[i]
+    if (Number.isNaN(x)) return false
+    if (Math.abs(x) > peak) peak = Math.abs(x)
+  }
+  return peak > 0.01
+}
+
+async function pickAndLoad() {
+  const auto = await candidates()
+  const f = forced
+  const list = f ? [f, ...auto.filter(c => c.dtype !== f.dtype || c.device !== f.device)] : auto
+  let lastErr: unknown = null
+  for (const c of list) {
+    try {
+      const m = await fromPretrained(c)
+      // also compiles the GPU shaders so the first real sentence is quick
+      if (!(await healthy(m)) && c !== list[list.length - 1]) { try { await (m as any).model?.dispose?.() } catch {} continue }
+      chosen = c
+      return m
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  throw lastErr ?? new Error('Failed to load voice model')
 }
 
 function load() {
   if (tts) return Promise.resolve(tts)
   if (!loading) {
-    loading = pickAndLoad().then(async m => {
-      // one throwaway generation compiles the GPU shaders so the first real sentence is quick
-      try { await m.generate('Ready.', { voice: 'af_heart' }) } catch {}
-      return (tts = m)
-    })
+    loading = pickAndLoad().then(m => (tts = m))
     loading.catch(() => { loading = null })
   }
   return loading
@@ -96,6 +140,49 @@ function forSpeech(text: string) {
     .trim()
 }
 
+// The model silently drops anything past ~510 phonemes (~400 chars of English).
+// Split long text at natural breaks so nothing is cut off.
+const MAX_PIECE = 260
+export function splitForModel(text: string): string[] {
+  if (text.length <= MAX_PIECE) return [text]
+  const out: string[] = []
+  let rest = text
+  while (rest.length > MAX_PIECE) {
+    const window = rest.slice(0, MAX_PIECE)
+    let cut = -1
+    for (const re of [/[.!?;:][”"’')\]]*\s/g, /[,—–][”"’')\]]*\s/g, /\s(?:and|but|or|which|who|that|while|because)\s/g, /\s/g]) {
+      let m: RegExpExecArray | null
+      let last = -1
+      re.lastIndex = 0
+      while ((m = re.exec(window))) if (m.index > MAX_PIECE * 0.4) last = m.index + (re.source.startsWith('\\s') ? 0 : m[0].length - 1)
+      if (last > 0) { cut = last; break }
+    }
+    if (cut <= 0) cut = MAX_PIECE
+    out.push(rest.slice(0, cut).trim())
+    rest = rest.slice(cut).trim()
+  }
+  if (rest) out.push(rest)
+  return out.filter(Boolean)
+}
+
+async function synthesize(model: KokoroTTS, text: string, voice: string, speed: number) {
+  const pieces = splitForModel(text)
+  const parts: Float32Array[] = []
+  let rate = 24000
+  for (const p of pieces) {
+    const a = await model.generate(p, { voice: voice as any, speed })
+    rate = a.sampling_rate
+    parts.push(a.audio as Float32Array)
+  }
+  if (parts.length === 1) return { samples: parts[0], rate }
+  const gap = Math.round(rate * 0.12)
+  const n = parts.reduce((s, p) => s + p.length, 0) + gap * (parts.length - 1)
+  const out = new Float32Array(n)
+  let o = 0
+  parts.forEach((p, i) => { out.set(p, o); o += p.length + (i < parts.length - 1 ? gap : 0) })
+  return { samples: out, rate }
+}
+
 async function pump() {
   if (running) return
   running = true
@@ -103,15 +190,23 @@ async function pump() {
     while (queue.length) {
       const job = queue.shift()!
       try {
-        const model = await load()
         const text = forSpeech(job.text)
         if (!/[\p{L}\p{N}]/u.test(text)) {
           // nothing speakable: just a short silence so the rhythm continues
-          post({ type: 'audio', id: job.id, blob: encodeWav(new Float32Array(0), 24000, job.padMs + 400) })
+          post({ type: 'audio', id: job.id, blob: encodeWav(new Float32Array(0), 24000, job.padMs + 400), cached: true })
           continue
         }
-        const audio = await model.generate(text, { voice: job.voice as any, speed: job.speed })
-        post({ type: 'audio', id: job.id, blob: encodeWav(audio.audio as Float32Array, audio.sampling_rate, job.padMs) })
+        const useCache = job.cacheable && job.speed === 1 && speechCache.cacheAvailable()
+        const key = useCache ? await speechCache.cacheKey(job.voice, text) : ''
+        const hit = useCache ? await speechCache.load(key) : null
+        if (hit) {
+          post({ type: 'audio', id: job.id, blob: encodeWav(hit.samples, hit.rate, job.padMs), cached: true, speechMs: (hit.samples.length / hit.rate) * 1000 })
+          continue
+        }
+        const model = await load()
+        const clip = await synthesize(model, text, job.voice, job.speed)
+        post({ type: 'audio', id: job.id, blob: encodeWav(clip.samples, clip.rate, job.padMs), cached: false, speechMs: (clip.samples.length / clip.rate) * 1000 })
+        if (useCache) speechCache.store(key, clip)
       } catch (e: any) {
         post({ type: 'error', id: job.id, message: e?.message || 'TTS error' })
       }
@@ -123,14 +218,15 @@ async function pump() {
 
 self.onmessage = (e: MessageEvent) => {
   const m = e.data
-  if (m.type === 'load') {
-    if (m.opts && !tts && !loading) forced = m.opts
+  if (m.type === 'config') {
+    if (m.opts?.device && m.opts?.dtype && !tts && !loading) forced = m.opts
+  } else if (m.type === 'load') {
     load().then(
-      () => post({ type: 'ready', id: m.id, device }),
+      () => post({ type: 'ready', id: m.id, device: chosen.device, dtype: chosen.dtype }),
       (err: any) => post({ type: 'error', id: m.id, message: err?.message || 'Failed to load voice model' }),
     )
   } else if (m.type === 'generate') {
-    const job: Job = { id: m.id, text: m.text, voice: m.voice, speed: m.speed, padMs: m.padMs ?? 0 }
+    const job: Job = { id: m.id, text: m.text, voice: m.voice, speed: m.speed ?? 1, padMs: m.padMs ?? 0, cacheable: m.cache !== false }
     if (m.priority) queue.unshift(job)
     else queue.push(job)
     pump()

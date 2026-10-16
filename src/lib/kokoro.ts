@@ -15,9 +15,41 @@ let loadPromise: Promise<void> | null = null
 
 export const kokoroDevice = () => device
 
+// Remember the model variant picked on this device so it never switches (and re-downloads) later.
+const CHOICE_KEY = 'tholla.model'
+const savedChoice = () => { try { return JSON.parse(localStorage.getItem(CHOICE_KEY) || 'null') } catch { return null } }
+
+// ── releasing the model when idle ───────────────────────────────
+let releaseTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Terminate the worker, freeing the model's GPU/CPU memory. It reloads from disk (~1 s) when needed. */
+export function releaseKokoro() {
+  cancelRelease()
+  if (!worker) return
+  worker.terminate()
+  worker = null
+  ready = false
+  loadPromise = null
+  for (const p of pending.values()) p.reject(new CancelledError())
+  pending.clear()
+  samples.clear()
+  pendingSamples.clear()
+}
+
+export function scheduleRelease(ms: number) {
+  cancelRelease()
+  releaseTimer = setTimeout(releaseKokoro, ms)
+}
+
+export function cancelRelease() {
+  if (releaseTimer) { clearTimeout(releaseTimer); releaseTimer = null }
+}
+
 function getWorker() {
   if (!worker) {
     worker = new Worker(new URL('./kokoro.worker.ts', import.meta.url), { type: 'module' })
+    // tell the worker which variant this device uses, without loading it yet
+    worker.postMessage({ type: 'config', opts: savedChoice() })
     worker.onmessage = (e: MessageEvent) => {
       const m = e.data
       if (m.type === 'progress') {
@@ -28,7 +60,11 @@ function getWorker() {
       if (!p) return
       pending.delete(m.id)
       if (m.type === 'audio') p.resolve(m.blob)
-      else if (m.type === 'ready') { device = m.device ?? null; p.resolve(undefined) }
+      else if (m.type === 'ready') {
+        device = m.device ?? null
+        localStorage.setItem(CHOICE_KEY, JSON.stringify({ device: m.device, dtype: m.dtype }))
+        p.resolve(undefined)
+      }
       else if (m.type === 'cancelled') p.reject(new CancelledError())
       else p.reject(new Error(m.message))
     }
@@ -50,6 +86,7 @@ export function isKokoroLoaded() {
 }
 
 export function loadKokoro(onProgress?: (p: LoadProgress) => void): Promise<void> {
+  cancelRelease()
   const off = onProgress ? onKokoroProgress(onProgress) : null
   if (!loadPromise) {
     const id = nextId++
@@ -71,14 +108,16 @@ export interface Generation {
 }
 
 /** Queue a sentence for synthesis. Priority jobs (voice samples) jump the queue. */
-export function generate(text: string, voice: string, opts: { priority?: boolean; speed?: number; padMs?: number } = {}): Generation {
+export function generate(text: string, voice: string, opts: { priority?: boolean; speed?: number; padMs?: number; cache?: boolean } = {}): Generation {
+  cancelRelease()
   const id = nextId++
+  const w = getWorker()
   const promise = new Promise<Blob>((resolve, reject) => {
     pending.set(id, { resolve, reject })
-    getWorker().postMessage({ type: 'generate', id, text, voice, speed: opts.speed ?? 1, padMs: opts.padMs ?? 0, priority: !!opts.priority })
+    w.postMessage({ type: 'generate', id, text, voice, speed: opts.speed ?? 1, padMs: opts.padMs ?? 0, priority: !!opts.priority, cache: opts.cache })
   })
   promise.catch(() => {})
-  return { id, promise, cancel: () => getWorker().postMessage({ type: 'cancel', ids: [id] }) }
+  return { id, promise, cancel: () => worker?.postMessage({ type: 'cancel', ids: [id] }) }
 }
 
 // Voice samples are cached so going back to a voice in the dial is instant.
