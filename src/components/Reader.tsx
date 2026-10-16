@@ -386,30 +386,28 @@ export default function Reader({ book, onBack }: Props) {
     setChapterIndex(i)
   }
 
-  const changeVoice = async (id: string) => {
-    if (id === voiceRef.current) return
-    // ensure the voice file is actually on the device before using it
+  const changeVoice = async (id: string): Promise<boolean> => {
+    if (id === voiceRef.current) return true
     setVoiceLoading(true)
     try {
       await ensureVoice(id)
     } catch (e: any) {
       setVoiceLoading(false)
       setError(`Couldn't load that voice (${e?.message || 'missing file'}). Tap Play to retry.`)
-      return
+      return false
     }
-    const resume = playingRef.current
+    haltAudio()
+    playingRef.current = false
+    setPlaying(false)
     voiceRef.current = id
     setVoice(id)
     localStorage.setItem(VOICE_KEY, id)
     clearCache()
     setVoiceLoading(false)
-    if (resume) {
-      haltAudio()
-      speak(idxRef.current, runRef.current)
-    } else if (audioRef.current) {
-      haltAudio()
-    }
+    saveProgress(book.id, chapterIndexRef.current, idxRef.current)
+    return true
   }
+
 
   const openDial = () => {
     // pause the book so voice samples can be heard
@@ -422,10 +420,6 @@ export default function Reader({ book, onBack }: Props) {
   const closeDial = () => {
     setDialOpen(false)
     requestAnimationFrame(() => voiceButtonRef.current?.focus())
-    if (wasPlayingRef.current) {
-      wasPlayingRef.current = false
-      play()
-    }
   }
 
   // leaving the reader: drop queued work and free the model shortly after

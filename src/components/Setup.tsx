@@ -19,6 +19,8 @@ export default function Setup({ onDone }: Props) {
   const [bytes, setBytes] = useState({ loaded: 0, total: 0 })
   const [voicesDone, setVoicesDone] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [torn, setTorn] = useState(false)
+  useEffect(() => { if (phase === 'done') { const t = setTimeout(() => setTorn(true), 700); return () => clearTimeout(t) } }, [phase])
   const files = useRef(new Map<string, { loaded: number; total: number }>())
   const started = useRef(false)
 
@@ -73,6 +75,14 @@ export default function Setup({ onDone }: Props) {
   return (
     <main className="min-h-dvh flex justify-center md:p-6">
       <Case className="w-full max-w-md md:rounded-[30px] px-6 pt-9 pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-6">
+        <span
+          className={`paper-tape ${torn ? 'rip' : ''}`}
+          role="status"
+          aria-live="polite"
+          style={{ opacity: phase === 'done' ? 0 : 1, transform: torn ? 'translateX(-110%)' : undefined }}
+        >
+          NOTICE: unit is storing voice engine on disk — keep this window open
+        </span>
         <Wordmark heading size="text-6xl" />
         <p className="stamp text-[10px] engraved-dark -mt-3">First-time setup</p>
 

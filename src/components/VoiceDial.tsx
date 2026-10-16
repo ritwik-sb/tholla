@@ -17,7 +17,7 @@ export function unlockSampleAudio() {
 
 interface Props {
   value: string
-  onSelect: (id: string) => void | Promise<void>
+  onSelect: (id: string) => void | Promise<any>
   onClose: () => void
 }
 
