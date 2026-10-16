@@ -641,3 +641,24 @@ body {
 }
 
 }
+
+/* circular loader around the voice porthole while a new voice downloads */
+.voice-loading {
+  display: inline-block;
+  filter: drop-shadow(0 0 0 transparent);
+}
+.voice-loading::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 180, 80, .18);
+  border-top-color: var(--amber);
+  border-right-color: var(--amber);
+  animation: voice-spin .85s linear infinite;
+}
+@keyframes voice-spin { to { transform: rotate(360deg); } }
+.voice-loading button { pointer-events: none; opacity: .85; }
+@media (prefers-reduced-motion: reduce) {
+  .voice-loading::after { animation-duration: .01ms; opacity: .5; }
+}

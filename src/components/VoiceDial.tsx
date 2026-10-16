@@ -17,7 +17,7 @@ export function unlockSampleAudio() {
 
 interface Props {
   value: string
-  onSelect: (id: string) => void
+  onSelect: (id: string) => void | Promise<void>
   onClose: () => void
 }
 
@@ -128,8 +128,10 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
     setRot(snap(rot + delta))
   }
 
-  const commit = () => {
-    onSelect(current.id)
+  const [committing, setCommitting] = useState(false)
+  const commit = async () => {
+    setCommitting(true)
+    try { await onSelect(current.id) } finally { setCommitting(false) }
     onClose()
   }
 
@@ -190,7 +192,7 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
       role="dialog"
       aria-modal="true"
       aria-label="Choose a voice"
-      onPointerDown={e => { if (e.target === e.currentTarget) commit() }}
+      onPointerDown={e => { if (e.target === e.currentTarget && !committing) commit() }}
     >
       <div
         className="absolute inset-x-0 text-center pointer-events-none"
@@ -281,9 +283,10 @@ export default function VoiceDial({ value, onSelect, onClose }: Props) {
       <button
         type="button"
         onClick={commit}
-        className="key dark absolute left-1/2 -translate-x-1/2 bottom-[max(1.5rem,env(safe-area-inset-bottom))] px-6"
+        disabled={committing}
+        className="key dark absolute left-1/2 -translate-x-1/2 bottom-[max(1.5rem,env(safe-area-inset-bottom))] px-6 disabled:opacity-70"
       >
-        Use {current.name}
+        {committing ? 'Loading…' : `Use ${current.name}`}
       </button>
     </div>
   )

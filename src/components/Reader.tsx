@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { saveProgress, getProgress } from '../lib/storage'
 import { buildReading } from '../lib/reading'
-import { loadKokoro, generate, onKokoroProgress, readAheadSeconds, needsPrebuffer, scheduleRelease, cancelRelease, CancelledError, type Generation } from '../lib/kokoro'
+import { loadKokoro, generate, ensureVoice, onKokoroProgress, readAheadSeconds, needsPrebuffer, scheduleRelease, cancelRelease, CancelledError, type Generation } from '../lib/kokoro'
 import { VOICES, DEFAULT_VOICE, getVoice } from '../lib/voices'
 import VoiceAvatar from './VoiceAvatar'
 import { Case, Grille, Icon, Knob, Wordmark } from './radio'
@@ -74,6 +74,7 @@ export default function Reader({ book, onBack }: Props) {
   const [kokoroLoading, setKokoroLoading] = useState(false)
   const [kokoroProgress, setKokoroProgress] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [voiceLoading, setVoiceLoading] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const playerRef = useRef<HTMLAudioElement | null>(null)
@@ -385,18 +386,27 @@ export default function Reader({ book, onBack }: Props) {
     setChapterIndex(i)
   }
 
-  const changeVoice = (id: string) => {
+  const changeVoice = async (id: string) => {
     if (id === voiceRef.current) return
+    // ensure the voice file is actually on the device before using it
+    setVoiceLoading(true)
+    try {
+      await ensureVoice(id)
+    } catch (e: any) {
+      setVoiceLoading(false)
+      setError(`Couldn't load that voice (${e?.message || 'missing file'}). Tap Play to retry.`)
+      return
+    }
+    const resume = playingRef.current
     voiceRef.current = id
     setVoice(id)
     localStorage.setItem(VOICE_KEY, id)
     clearCache()
-    if (playingRef.current) {
-      // restart the current sentence in the new voice
+    setVoiceLoading(false)
+    if (resume) {
       haltAudio()
       speak(idxRef.current, runRef.current)
     } else if (audioRef.current) {
-      // drop paused audio so resume uses the new voice
       haltAudio()
     }
   }
@@ -446,7 +456,16 @@ export default function Reader({ book, onBack }: Props) {
     return () => { for (const a of ['play', 'pause', 'nexttrack', 'previoustrack'] as MediaSessionAction[]) set(a, null) }
   }, [])
 
-  // Opening a book warms the engine so the first new sentence is quick; it's released if unused.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const w = window as any
+    w.__play = play
+    w.__pause = pause
+    w.__changeVoice = changeVoice
+    w.__state = () => ({ playing: playingRef.current, idx: idxRef.current, voice: voiceRef.current, run: runRef.current, error })
+    return () => { delete w.__play; delete w.__pause; delete w.__changeVoice; delete w.__state }
+  }, [play, pause, changeVoice, error])
+
   useEffect(() => {
     let alive = true
     loadKokoro().then(() => {
@@ -585,18 +604,22 @@ export default function Reader({ book, onBack }: Props) {
 
         <div className="flex items-center justify-between gap-3 w-full md:max-w-2xl md:mx-auto">
           <div className="flex flex-col items-center gap-1 w-[120px]">
-            <button
-              ref={voiceButtonRef}
-              type="button"
-              onClick={openDial}
-              aria-haspopup="dialog"
-              aria-label={`Voice: ${character.name}. Change voice`}
-              className="porthole"
-            >
-              <span className="glass block">
-                <VoiceAvatar voice={character} size={68} talking={playing && !kokoroLoading} />
-              </span>
-            </button>
+            <span className={`relative inline-block ${voiceLoading ? 'voice-loading' : ''}`}>
+              <button
+                ref={voiceButtonRef}
+                type="button"
+                onClick={openDial}
+                disabled={voiceLoading}
+                aria-busy={voiceLoading}
+                aria-haspopup="dialog"
+                aria-label={`Voice: ${character.name}. Change voice`}
+                className="porthole"
+              >
+                <span className="glass block">
+                  <VoiceAvatar voice={character} size={68} talking={playing && !kokoroLoading} />
+                </span>
+              </button>
+            </span>
             <span className="stamp text-[10px] engraved">Voice · {character.name}</span>
           </div>
 

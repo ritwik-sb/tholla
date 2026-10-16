@@ -184,11 +184,38 @@ export async function prefetchVoices(ids: string[], onProgress?: (done: number) 
       const id = queue.shift()!
       const url = VOICE_URL(id)
       if (!(await cache.match(url))) {
-        const res = await fetch(url)
-        if (!res.ok) throw new Error(`Couldn't download voice ${id}`)
-        await cache.put(url, res)
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const res = await fetch(url)
+            if (!res.ok) throw new Error(`server returned ${res.status}`)
+            await cache.put(url, res)
+            break
+          } catch (e) {
+            if (attempt === 2) throw e
+            await new Promise(r => setTimeout(r, 600 * Math.pow(2, attempt)))
+          }
+        }
       }
       onProgress?.(++done)
     }
   }))
+}
+
+/** Make sure a voice file is present on device (fetch + retry), so switching voices works offline. */
+export async function ensureVoice(id: string) {
+  const cache = await caches.open('kokoro-voices')
+  const url = VOICE_URL(id)
+  if (await cache.match(url)) return
+  let last: any
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(url, { cache: 'reload' })
+      if (!res.ok) throw new Error(`server returned ${res.status}`)
+      const buf = await res.arrayBuffer()
+      if (buf.byteLength < 1000) throw new Error('file was empty')
+      await cache.put(url, new Response(buf, { status: 200, headers: new Headers({ 'content-type': 'application/octet-stream' }) }))
+      return
+    } catch (e) { last = e; await new Promise(r => setTimeout(r, 400 * Math.pow(2, attempt))) }
+  }
+  throw last || new Error('failed to download')
 }
