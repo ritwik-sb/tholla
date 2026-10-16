@@ -83,6 +83,19 @@ function encodeWav(samples: Float32Array, rate: number, padMs: number) {
   return new Blob([buf], { type: 'audio/wav' })
 }
 
+// Text the model can't voice ("…", "...", footnote marks) produces noise; turn it into pauses.
+function forSpeech(text: string) {
+  return text
+    .replace(/[*†‡§¶]+/g, ' ')
+    .replace(/(?:\.\s*){2,}|…+/g, ', ')
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .replace(/,\s*(?=[,.!?;:])/g, '')
+    .replace(/,\s*(?=["”’')\]]*\s*$)/, '.')
+    .replace(/^[\s,;:]+|[\s,;:]+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
 async function pump() {
   if (running) return
   running = true
@@ -91,7 +104,13 @@ async function pump() {
       const job = queue.shift()!
       try {
         const model = await load()
-        const audio = await model.generate(job.text, { voice: job.voice as any, speed: job.speed })
+        const text = forSpeech(job.text)
+        if (!/[\p{L}\p{N}]/u.test(text)) {
+          // nothing speakable: just a short silence so the rhythm continues
+          post({ type: 'audio', id: job.id, blob: encodeWav(new Float32Array(0), 24000, job.padMs + 400) })
+          continue
+        }
+        const audio = await model.generate(text, { voice: job.voice as any, speed: job.speed })
         post({ type: 'audio', id: job.id, blob: encodeWav(audio.audio as Float32Array, audio.sampling_rate, job.padMs) })
       } catch (e: any) {
         post({ type: 'error', id: job.id, message: e?.message || 'TTS error' })

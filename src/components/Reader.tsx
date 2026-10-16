@@ -10,6 +10,7 @@ import type { Book } from '../types'
 
 const VOICE_KEY = 'tholla.voice'
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2]
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='
 
 interface Props {
   book: Book
@@ -165,6 +166,26 @@ export default function Reader({ book, onBack }: Props) {
     saveProgress(book.id, chapterIndex, idxRef.current)
   }
 
+  // Never race through the book on errors: stay on the sentence and let the user tap Play again.
+  const failuresRef = useRef(0)
+  const failed = (i: number, run: number, e: any) => {
+    if (run !== runRef.current) return
+    const blocked = e?.name === 'NotAllowedError'
+    failuresRef.current++
+    if (!blocked && failuresRef.current < 2 && i + 1 < sentences.current.length) {
+      // one unreadable sentence: skip it once
+      speak(i + 1, run)
+      return
+    }
+    failuresRef.current = 0
+    playingRef.current = false
+    setPlaying(false)
+    haltAudio()
+    setIdx(i); idxRef.current = i
+    setError(blocked ? 'Playback paused by the browser. Tap Play to continue.' : `Couldn't play this sentence (${e?.message || 'voice error'}). Tap Play to retry.`)
+    saveProgress(book.id, chapterIndexRef.current, i)
+  }
+
   const speak = async (i: number, run: number) => {
     if (run !== runRef.current || !playingRef.current) return
     if (i >= sentences.current.length) { stop(); return }
@@ -178,8 +199,9 @@ export default function Reader({ book, onBack }: Props) {
       if (run !== runRef.current || !playingRef.current) return
       const a = player()
       const url = URL.createObjectURL(blob)
-      if (a.src.startsWith('blob:')) URL.revokeObjectURL(a.src)
+      const old = a.src
       a.src = url
+      if (old.startsWith('blob:')) URL.revokeObjectURL(old)
       a.playbackRate = speedRef.current
       audioRef.current = a
       // the pause after the sentence is already part of the audio, so chain immediately
@@ -188,12 +210,12 @@ export default function Reader({ book, onBack }: Props) {
         if (run !== runRef.current || !playingRef.current) return
         speak(i + 1, run)
       }
-      a.onerror = () => { if (run === runRef.current) speak(i + 1, run) }
+      a.onerror = () => { if (run === runRef.current) failed(i, run, new Error('Audio could not be played')) }
       await a.play()
+      failuresRef.current = 0
     } catch (e: any) {
       if (run !== runRef.current || e instanceof CancelledError) return
-      setError(e?.message || 'TTS error')
-      speak(i + 1, run)
+      failed(i, run, e)
     }
   }
 
@@ -226,6 +248,13 @@ export default function Reader({ book, onBack }: Props) {
       try { await audioRef.current.play(); playingRef.current = true; setPlaying(true); return } catch {}
     }
     haltAudio()
+    // Start the shared player inside the tap so mobile browsers let later sentences play.
+    const a = player()
+    a.onended = null
+    a.onerror = null
+    a.src = SILENT_WAV
+    a.play().catch(() => {})
+    failuresRef.current = 0
     const run = runRef.current
     playingRef.current = true
     setPlaying(true)
