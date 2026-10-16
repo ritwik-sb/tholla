@@ -3,6 +3,7 @@ import { listBooks, deleteBook, saveBook, saveFile, getFile, getProgress, savePr
 import { extractPdf, PARSER_VERSION, type ExtractProgress } from '../lib/pdf'
 import type { Book } from '../types'
 import { Case, Grille, Icon, SerialPlate, Wordmark } from './radio'
+import InstallButton from './InstallButton'
 
 interface Props {
   onOpen: (book: Book) => void
@@ -100,6 +101,7 @@ export default function Library({ onOpen }: Props) {
         <header className="flex flex-col items-center gap-2 pt-2">
           <Wordmark heading size="text-6xl md:text-7xl" />
           <p className="stamp text-[10px] engraved-dark text-center">Book receiver · Model 82M · Made for listening</p>
+          <div className="mt-2"><InstallButton /></div>
         </header>
 
         <div className="relative">
@@ -222,7 +224,7 @@ export default function Library({ onOpen }: Props) {
         <div className="mt-auto pt-4 flex flex-col items-center gap-3">
           <SerialPlate />
           <p className="stamp text-[9px] engraved-dark text-center">
-            Books and voices stay on this device · Install from the browser menu to use offline
+            Books and voices stay on this device · works offline
           </p>
         </div>
       </Case>

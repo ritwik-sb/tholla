@@ -14,13 +14,13 @@ export default defineConfig({
         // the ONNX runtime .wasm and pdf.js .mjs worker must be cached for offline use
         globPatterns: ['**/*.{js,mjs,css,html,wasm,png,svg,webmanifest,woff2}'],
       },
-      includeAssets: ['icon-192.png', 'icon-512.png'],
+      includeAssets: ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'തൊള്ള',
         short_name: 'തൊള്ള',
         description: 'PDFs as audiobooks — read aloud offline.',
-        theme_color: '#0f172a',
-        background_color: '#0f172a',
+        theme_color: '#1b130d',
+        background_color: '#1b130d',
         display: 'standalone',
         start_url: '/',
         icons: [
