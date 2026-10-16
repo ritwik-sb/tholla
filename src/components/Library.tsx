@@ -7,11 +7,13 @@ import InstallButton from './InstallButton'
 
 interface Props {
   onOpen: (book: Book) => void
+  onBusyChange?: (busy: boolean) => void
 }
 
-export default function Library({ onOpen }: Props) {
+export default function Library({ onOpen, onBusyChange }: Props) {
   const [books, setBooks] = useState<ShelfItem[]>([])
   const [busy, setBusy] = useState(false)
+  useEffect(() => onBusyChange?.(busy), [busy])
   const [job, setJob] = useState<(ExtractProgress & { name: string; index: number; count: number }) | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)

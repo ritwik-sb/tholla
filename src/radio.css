@@ -348,6 +348,16 @@ body {
   background: linear-gradient(transparent 82%, rgba(255,170,60,.35) 82%);
 }
 
+/* tall invisible touch target around the tuning scale */
+.tuning-hit {
+  padding: 10px 0 4px;
+  touch-action: none;
+  cursor: ew-resize;
+  border-radius: 6px;
+}
+.tuning-hit:focus-visible { outline-offset: 0; }
+.tuning-hit.dragging .needle { width: 3px; box-shadow: 0 0 10px rgba(255,90,40,1); }
+
 /* tuning scale with needle (shows progress through the chapter) */
 .tuning {
   position: relative;

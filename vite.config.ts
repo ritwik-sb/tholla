@@ -8,13 +8,18 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // the app decides when to apply an update (never mid-playback)
+      registerType: 'prompt',
+      injectRegister: false,
       workbox: {
         maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
+        // take control on first install so the app works offline right away;
+        // later versions still wait for the app to apply them
+        clientsClaim: true,
         // the ONNX runtime .wasm and pdf.js .mjs worker must be cached for offline use
         globPatterns: ['**/*.{js,mjs,css,html,wasm,png,svg,webp,webmanifest,woff2}'],
       },
-      includeAssets: ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png'],
+      includeAssets: ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon.svg'],
       manifest: {
         name: 'തൊള്ള',
         short_name: 'തൊള്ള',
@@ -26,6 +31,7 @@ export default defineConfig({
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
     }),

@@ -358,6 +358,24 @@ export default function Reader({ book, onBack }: Props) {
   jumpRef.current = jump
   const jumpStable = useCallback((i: number) => jumpRef.current(i), [])
 
+  // ── seeking with the dial needle ───────────────────────────────
+  const scaleRef = useRef<HTMLDivElement | null>(null)
+  const [seek, setSeek] = useState<number | null>(null)
+  const fracAt = (clientX: number) => {
+    const r = scaleRef.current!.getBoundingClientRect()
+    return Math.min(1, Math.max(0, (clientX - r.left) / r.width))
+  }
+  const seekToIndex = (i: number) => {
+    const target = Math.min(total - 1, Math.max(0, i))
+    const resume = playingRef.current
+    jump(target)
+    if (resume) play()
+  }
+  const seekTo = (frac: number) => {
+    setSeek(null)
+    if (total) seekToIndex(Math.floor(frac * total))
+  }
+
   const selectChapter = (i: number) => {
     stop()
     if (i === chapterIndex) return
@@ -441,6 +459,8 @@ export default function Reader({ book, onBack }: Props) {
 
   const chapterTitle = chapters[chapterIndex]?.title || book.name
   const progress = total ? ((idx + 0.5) / total) * 100 : 0
+  const seekIndex = seek != null ? Math.min(total - 1, Math.max(0, Math.floor(seek * total))) : idx
+  const needleAt = seek != null ? ((seekIndex + 0.5) / total) * 100 : progress
   const statusText = error
     ? error
     : kokoroLoading && playing
@@ -464,12 +484,48 @@ export default function Reader({ book, onBack }: Props) {
 
         <div className="flex-1 min-h-0 flex gap-4">
           <Grille rows={16} className="hidden md:flex w-44 shrink-0" />
-          <div className="dial-window flex-1 min-h-0 flex flex-col">
-            <div className="px-5 pt-3" aria-hidden="true">
-              <div className="tuning"><div className="needle" style={{ left: 0, transform: `translateX(${progress}cqw)` }} /></div>
-              <div className="flex justify-between stamp text-[9px] tracking-[.2em] mt-1.5 text-[rgba(246,220,166,.45)]">
-                <span>{chapters.length > 1 ? `Band ${chapterIndex + 1}` : 'Band 1'}</span>
-                <span>{Math.round(progress)}%</span>
+          <div className="dial-window flex-1 min-w-0 min-h-0 flex flex-col">
+            <div className="px-5 pt-1">
+              {/* drag the needle (or tap the scale) to seek within the chapter */}
+              <div
+                ref={scaleRef}
+                role="slider"
+                tabIndex={0}
+                aria-label="Position in chapter"
+                aria-valuemin={1}
+                aria-valuemax={total}
+                aria-valuenow={Math.min(idx + 1, total)}
+                aria-valuetext={`Sentence ${Math.min(idx + 1, total)} of ${total}`}
+                className={`tuning-hit ${seek != null ? 'dragging' : ''}`}
+                onPointerDown={e => {
+                  if (!total) return
+                  e.currentTarget.setPointerCapture(e.pointerId)
+                  setSeek(fracAt(e.clientX))
+                }}
+                onPointerMove={e => { if (seek != null) setSeek(fracAt(e.clientX)) }}
+                onPointerUp={e => { if (seek != null) seekTo(fracAt(e.clientX)) }}
+                onPointerCancel={() => setSeek(null)}
+                onKeyDown={e => {
+                  const step = e.shiftKey ? 10 : 1
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); seekToIndex(idx + step) }
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); seekToIndex(idx - step) }
+                  if (e.key === 'Home') { e.preventDefault(); seekToIndex(0) }
+                  if (e.key === 'End') { e.preventDefault(); seekToIndex(total - 1) }
+                }}
+              >
+                <div className="tuning">
+                  <div className={`needle ${seek != null ? 'live' : ''}`} style={{ left: 0, transform: `translateX(${needleAt}cqw)` }} />
+                </div>
+              </div>
+              <div className="flex justify-between gap-3 stamp text-[9px] tracking-[.2em] mt-0.5 text-[rgba(246,220,166,.45)]" aria-hidden="true">
+                {seek != null ? (
+                  <span className="min-w-0 truncate normal-case tracking-[.06em] text-[var(--amber-text)]">
+                    Sentence {seekIndex + 1} · {sentences.current[seekIndex]?.slice(0, 60)}
+                  </span>
+                ) : (
+                  <span>{chapters.length > 1 ? `Band ${chapterIndex + 1}` : 'Band 1'}</span>
+                )}
+                <span className="shrink-0">{Math.round(needleAt)}%</span>
               </div>
             </div>
             <div ref={containerRef} className="reading flex-1 min-h-0 overflow-y-auto px-5 pt-2 pb-6" aria-label="Reading text">
