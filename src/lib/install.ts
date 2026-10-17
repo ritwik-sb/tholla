@@ -9,6 +9,14 @@ const listeners = new Set<() => void>()
 const notify = () => listeners.forEach(l => l())
 
 export function initInstall() {
+  // Ask the browser to keep the downloaded model/voices (300 MB+ in OPFS) from being
+  // evicted. Once per device: Firefox shows a permission dialog, everyone else is silent.
+  try {
+    if (!localStorage.getItem('tholla.persist')) {
+      localStorage.setItem('tholla.persist', '1')
+      navigator.storage?.persist?.().catch(() => {})
+    }
+  } catch {}
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault()
     deferred = e as PromptEvent
