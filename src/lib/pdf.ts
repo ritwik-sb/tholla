@@ -1,6 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist'
 import type { Chapter } from '../types'
 import { HEADING_RE } from './pdf-headings'
+import { repairGluedWords } from './word-repair'
 
 // This module runs inside import.worker.ts; pdf.js uses its in-thread worker there.
 
@@ -161,12 +162,13 @@ function joinLines(lines: string[]): string {
   let out = ''
   for (const line of lines) {
     if (!out) out = line
-    else if (/[A-Za-z]-$/.test(out) && /^[a-z]/.test(line)) out = out.slice(0, -1) + line
+    // keep the hyphen when it belongs to a URL broken across lines
+    else if (/[A-Za-z]-$/.test(out) && /^[a-z]/.test(line) && !/(?:https?:\/\/|www\.)\S*$/i.test(out)) out = out.slice(0, -1) + line
     else out += ' ' + line
   }
   // Collapse letter-spaced capitals while word gaps are still double spaces,
   // then flatten every remaining gap to a single space.
-  return normalizeSpacedCapitals(out)
+  return repairGluedWords(normalizeSpacedCapitals(out))
     .replace(/\s+/g, ' ')
     .replace(/\s+([,.;:!?])/g, '$1')
     .trim()
@@ -176,7 +178,7 @@ function joinPage(full: string, next: string, paragraphBreak: boolean): string {
   if (!full) return next
   if (!next) return full
   if (paragraphBreak) return full + '\n\n' + next
-  if (/[A-Za-z]-$/.test(full) && /^[a-z]/.test(next)) return full.slice(0, -1) + next
+  if (/[A-Za-z]-$/.test(full) && /^[a-z]/.test(next) && !/(?:https?:\/\/|www\.)\S*$/i.test(full)) return full.slice(0, -1) + next
   return full + ' ' + next
 }
 
@@ -257,8 +259,13 @@ export async function extractPdfData(buf: ArrayBuffer, onProgress?: (p: ExtractP
   full = full.replace(/\n{3,}/g, '\n\n').trim()
 
   onProgress?.({ phase: 'chapters', done: numPages, total: numPages })
-  const chapters = (await outlineChapters(doc, full, pageStart, numPages)) ?? headingChapters(full)
-  return { text: full, chapters: chapters.length ? chapters.slice(0, 150) : [{ title: 'Full text', text: full }] }
+  let chapters = (await outlineChapters(doc, full, pageStart, numPages)) ?? headingChapters(full)
+  if (!chapters.length) chapters = [{ title: 'Full text', text: full }]
+  // Page joins can still fuse two words after the paragraph-level pass, so repair
+  // the assembled chapter/full text as well.
+  chapters = chapters.slice(0, 150).map(c => ({ ...c, text: repairGluedWords(c.text) }))
+  full = repairGluedWords(full)
+  return { text: full, chapters }
 }
 
 async function outlineChapters(doc: any, full: string, pageStart: number[], numPages: number): Promise<Chapter[] | null> {
@@ -277,7 +284,7 @@ async function outlineChapters(doc: any, full: string, pageStart: number[], numP
           page = typeof dest[0] === 'number' ? dest[0] : await doc.getPageIndex(dest[0])
         }
       } catch {}
-      const title = normalizeSpacedCapitals(String(it.title || '').trim()).replace(/\s+/g, ' ').trim()
+      const title = repairGluedWords(normalizeSpacedCapitals(String(it.title || '').trim())).replace(/\s+/g, ' ').trim()
       if (page >= 0 && page < numPages && title) entries.push({ title, page, leaf: !it.items?.length, depth })
       await walk(it.items, depth + 1)
     }
