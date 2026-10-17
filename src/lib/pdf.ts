@@ -12,15 +12,51 @@ export interface Extracted {
 }
 
 type Item = { str: string; x: number; y: number; w: number; size: number }
-type Line = { y: number; x0: number; x1: number; size: number; text: string }
+type Line = { y: number; x0: number; x1: number; size: number; text: string; edge: boolean }
 
 // Front/back matter that shouldn't be read aloud as a chapter.
 const SKIP_TITLE_RE = /^(cover|title page|half title|welcome|contents|table of contents|copyright|dedication|epigraph|also by|other books|praise for|newsletters?|notes|endnotes|bibliography|references|index|acknowledg|about the (author|publisher)|preface|foreword|isbn)\b/i
 const TERMINAL_RE = /[.!?:;]["”’')\]]*$/
 
+// Letter-spaced text ("N O A M", "o f t h e") arrives with single spaces between
+// letters; word gaps are kept as double spaces by buildLines, so a run never
+// crosses a real word boundary.
+const COMMON_WORDS = new Set([
+  'a', 'about', 'above', 'after', 'again', 'against', 'all', 'also', 'am', 'an', 'and', 'any', 'are', 'as', 'at',
+  'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but', 'by', 'can', 'could', 'did', 'do',
+  'down', 'during', 'each', 'few', 'for', 'from', 'go', 'had', 'has', 'have', 'he', 'her', 'his', 'how', 'i', 'if',
+  'in', 'into', 'is', 'it', 'its', 'just', 'me', 'more', 'most', 'much', 'must', 'my', 'no', 'not', 'now', 'of',
+  'off', 'on', 'one', 'only', 'or', 'other', 'our', 'out', 'over', 'same', 'she', 'should', 'so', 'some', 'such',
+  'than', 'that', 'the', 'their', 'them', 'then', 'there', 'these', 'they', 'this', 'those', 'through', 'to', 'too',
+  'under', 'until', 'up', 'us', 'very', 'was', 'we', 'were', 'what', 'when', 'where', 'which', 'while', 'who',
+  'whose', 'why', 'will', 'with', 'would', 'you', 'your',
+])
+
+/** Split a run of letters that lost its word gaps ("ofthe" -> "of the"). */
+function splitJoinedWord(letters: string): string | null {
+  const n = letters.length
+  const best: (string[] | null)[] = Array.from({ length: n + 1 }, () => null)
+  best[0] = []
+  for (let i = 1; i <= n; i++) {
+    for (let j = Math.max(0, i - 10); j < i; j++) {
+      if (!best[j]) continue
+      const word = letters.slice(j, i)
+      if (!COMMON_WORDS.has(word)) continue
+      const candidate = [...best[j]!, word]
+      if (!best[i] || candidate.length < best[i]!.length) best[i] = candidate
+    }
+  }
+  const parts = best[n]
+  return parts && parts.length > 1 ? parts.join(' ') : null
+}
+
 function normalizeSpacedCapitals(s: string): string {
-  // "H A V E" / "T E A P O T S ." -> "HAVE" / "TEAPOTS."
-  return s.replace(/(?:\b[A-Z]\s){2,}[A-Z]\.?/g, m => m.replace(/\s+/g, ''))
+  return s.replace(/\b(?:[A-Za-z] ){1,}[A-Za-z]\b/g, run => {
+    const letters = run.replace(/ /g, '')
+    if (letters.length === 2) return COMMON_WORDS.has(letters.toLowerCase()) ? letters : run
+    if (/^[A-Z]/.test(letters)) return letters
+    return splitJoinedWord(letters) ?? letters
+  })
 }
 
 function isHeadingText(t: string): boolean {
@@ -48,7 +84,7 @@ const mode = (xs: number[]) => {
   return best
 }
 
-function buildLines(items: Item[]): Line[] {
+function buildLines(items: Item[], pageHeight = 0): Line[] {
   const sorted = [...items].sort((a, b) => (Math.abs(a.y - b.y) > 3 ? b.y - a.y : a.x - b.x))
   const groups: { y: number; items: Item[] }[] = []
   for (const it of sorted) {
@@ -61,13 +97,18 @@ function buildLines(items: Item[]): Line[] {
     g.items.sort((a, b) => a.x - b.x)
     const out: string[] = []
     let prevEnd: number | null = null
+    let wordGap = false
     let x1 = 0
     for (const it of g.items) {
+      // A whitespace-only item is a real word gap, not a letter gap.
+      if (!it.str.trim()) { wordGap = true; continue }
       const size = it.size || 12
       const estW = it.w > 0 ? it.w : Math.max(4, it.str.length * size * 0.5)
-      if (prevEnd !== null && it.x - prevEnd > Math.max(2, size * 0.22)) out.push(' ')
+      const gap = prevEnd === null ? 0 : it.x - prevEnd
+      if (out.length && (wordGap || gap > Math.max(2, size * 0.22))) out.push('  ')
       out.push(it.str)
       prevEnd = it.x + estW
+      wordGap = false
       x1 = Math.max(x1, prevEnd)
     }
     const nonEmpty = g.items.filter(i => i.str.trim())
@@ -76,7 +117,11 @@ function buildLines(items: Item[]): Line[] {
       x0: Math.min(...(nonEmpty.length ? nonEmpty : g.items).map(i => i.x)),
       x1,
       size: Math.max(...g.items.map(i => i.size || 12)),
-      text: out.join('').replace(/\s{2,}/g, ' ').trim(),
+      // running headers/footers live at the very top or bottom of the page
+      edge: pageHeight > 0 && (g.y > pageHeight * 0.86 || g.y < pageHeight * 0.08),
+      // keep double spaces for now: joinLines needs them to protect word
+      // boundaries while it collapses letter-spaced capitals
+      text: out.join('').trim(),
     }
   }).filter(l => l.text)
 }
@@ -119,7 +164,12 @@ function joinLines(lines: string[]): string {
     else if (/[A-Za-z]-$/.test(out) && /^[a-z]/.test(line)) out = out.slice(0, -1) + line
     else out += ' ' + line
   }
-  return normalizeSpacedCapitals(out.replace(/\s{2,}/g, ' ').trim())
+  // Collapse letter-spaced capitals while word gaps are still double spaces,
+  // then flatten every remaining gap to a single space.
+  return normalizeSpacedCapitals(out)
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .trim()
 }
 
 function joinPage(full: string, next: string, paragraphBreak: boolean): string {
@@ -140,9 +190,11 @@ export async function extractPdfData(buf: ArrayBuffer, onProgress?: (p: ExtractP
   const numPages: number = doc.numPages
 
   const pages: Item[][] = []
+  const heights: number[] = []
   for (let p = 1; p <= numPages; p++) {
     onProgress?.({ phase: 'pages', done: p - 1, total: numPages })
     const page = await doc.getPage(p)
+    heights.push(page.getViewport({ scale: 1 }).height)
     const content = await page.getTextContent()
     pages.push(
       (content.items as any[])
@@ -157,7 +209,8 @@ export async function extractPdfData(buf: ArrayBuffer, onProgress?: (p: ExtractP
     )
   }
 
-  const pageLines = pages.map(buildLines)
+  const pageLines = pages.map((items, i) => buildLines(items, heights[i]))
+  const bodySize = median(pageLines.flat().filter(l => l.text.length > 40).map(l => Math.round(l.size * 2) / 2)) || 12
 
   // Drop running headers/footers: page numbers and lines repeated on many pages.
   const lineCounts = new Map<string, number>()
@@ -166,12 +219,28 @@ export async function extractPdfData(buf: ArrayBuffer, onProgress?: (p: ExtractP
       if (t.length > 3) lineCounts.set(t, (lineCounts.get(t) ?? 0) + 1)
     }
   }
+  // Running heads often carry the page number ("4 Emotional Design", "18 Emotional Design")
+  // or letter-spaced page numbers ("1 8 E m o t i o n a l D e s i g n"), so exact matching
+  // misses them. Compare only the letters of lines at the page edges.
+  const edgeKey = (t: string) => t.toLowerCase().replace(/[^a-z]+/g, '')
+  const edgeCounts = new Map<string, number>()
+  for (const lines of pageLines) {
+    for (const k of new Set(lines.filter(l => l.edge).map(l => edgeKey(l.text)))) {
+      if (k.length >= 4) edgeCounts.set(k, (edgeCounts.get(k) ?? 0) + 1)
+    }
+  }
   const repeatLimit = Math.max(2, Math.floor(numPages / 2))
+  const edgeLimit = Math.max(3, Math.floor(numPages * 0.03))
   const cleaned = pageLines.map(lines =>
-    lines.filter(l => !/^\d+$/.test(l.text) && (lineCounts.get(l.text) ?? 0) <= repeatLimit)
+    lines.filter(l => {
+      if (/^[\d\s]+$/.test(l.text)) return false
+      if (/^(this page (intentionally )?left blank|blank page)\.?$/i.test(l.text)) return false
+      // small print at the very top/bottom is a running head or footer, never body copy
+      if (l.edge && l.size < bodySize * 0.92 && l.text.length < 90) return false
+      if (l.edge && (edgeCounts.get(edgeKey(l.text)) ?? 0) >= edgeLimit) return false
+      return (lineCounts.get(l.text) ?? 0) <= repeatLimit
+    })
   )
-
-  const bodySize = median(cleaned.flat().filter(l => l.text.length > 40).map(l => Math.round(l.size * 2) / 2)) || 12
 
   // Build the full text, remembering where each page begins.
   let full = ''
@@ -208,7 +277,7 @@ async function outlineChapters(doc: any, full: string, pageStart: number[], numP
           page = typeof dest[0] === 'number' ? dest[0] : await doc.getPageIndex(dest[0])
         }
       } catch {}
-      const title = normalizeSpacedCapitals(String(it.title || '').replace(/\s+/g, ' ').trim())
+      const title = normalizeSpacedCapitals(String(it.title || '').trim()).replace(/\s+/g, ' ').trim()
       if (page >= 0 && page < numPages && title) entries.push({ title, page, leaf: !it.items?.length, depth })
       await walk(it.items, depth + 1)
     }
