@@ -73,6 +73,7 @@ export default function Reader({ book, onBack }: Props) {
   const [bandOpen, setBandOpen] = useState(false)
   const [kokoroLoading, setKokoroLoading] = useState(false)
   const [kokoroProgress, setKokoroProgress] = useState('')
+  const [speechLoading, setSpeechLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [voiceLoading, setVoiceLoading] = useState(false)
 
@@ -125,7 +126,8 @@ export default function Reader({ book, onBack }: Props) {
       const a = playerRef.current
       a?.pause()
       if (a?.src.startsWith('blob:')) URL.revokeObjectURL(a.src)
-      saveProgress(book.id, chapterIndex, idxRef.current)
+      // live ref, not the chapterIndex captured when this effect first ran
+      saveProgress(book.id, chapterIndexRef.current, idxRef.current)
     }
   }, [book.id])
 
@@ -224,6 +226,7 @@ export default function Reader({ book, onBack }: Props) {
   const stop = () => {
     playingRef.current = false
     setPlaying(false)
+    setSpeechLoading(false)
     haltAudio()
     clearCache()
     scheduleRelease(10 * 60e3)
@@ -245,6 +248,7 @@ export default function Reader({ book, onBack }: Props) {
     failuresRef.current = 0
     playingRef.current = false
     setPlaying(false)
+    setSpeechLoading(false)
     haltAudio()
     setIdx(seg.first); idxRef.current = seg.first
     setError(blocked ? 'Playback paused by the browser. Tap Play to continue.' : `Couldn't play this sentence (${e?.message || 'voice error'}). Tap Play to retry.`)
@@ -257,6 +261,8 @@ export default function Reader({ book, onBack }: Props) {
     const seg = segmentAt(i)
     setIdx(i); idxRef.current = i
     plan(seg)
+    // let the dial spin and the status line explain the wait while audio is being made
+    setSpeechLoading(true)
     try {
       const blob = await audioFor(seg).promise
       if (run !== runRef.current || !playingRef.current) return
@@ -269,6 +275,7 @@ export default function Reader({ book, onBack }: Props) {
         }
       }
       setKokoroLoading(false)
+      setSpeechLoading(false)
       const a = player()
       const url = URL.createObjectURL(blob)
       const old = a.src
@@ -319,7 +326,13 @@ export default function Reader({ book, onBack }: Props) {
     cancelRelease()
     // resume if paused mid-sentence
     if (audioRef.current && audioRef.current.paused && idxRef.current === idx) {
-      try { await audioRef.current.play(); playingRef.current = true; setPlaying(true); return } catch {}
+      const a = audioRef.current
+      // don't let a stalled media element swallow the tap: fall through and rebuild if it doesn't start
+      const started = await Promise.race([
+        a.play().then(() => true, () => false),
+        new Promise<boolean>(r => setTimeout(() => r(false), 1500)),
+      ])
+      if (started) { playingRef.current = true; setPlaying(true); return }
     }
     haltAudio()
     // Start the shared player inside the tap so mobile browsers let later sentences play.
@@ -341,6 +354,7 @@ export default function Reader({ book, onBack }: Props) {
   const pause = () => {
     playingRef.current = false
     setPlaying(false)
+    setSpeechLoading(false)
     audioRef.current?.pause()
     // don't keep the GPU busy preparing audio nobody is listening to
     plan(segmentAt(idxRef.current), false)
@@ -476,9 +490,13 @@ export default function Reader({ book, onBack }: Props) {
   const needleAt = seek != null ? ((seekIndex + 0.5) / total) * 100 : progress
   const statusText = error
     ? error
-    : kokoroLoading && playing
+    : playing && kokoroLoading
       ? `Warming up the valves… ${kokoroProgress}`
-      : `Sentence ${Math.min(idx + 1, total)} of ${total}`
+      : playing && speechLoading
+        ? 'Preparing speech…'
+        : `Sentence ${Math.min(idx + 1, total)} of ${total}`
+  // spinner around the voice porthole while the engine downloads or speech is made
+  const portholeBusy = !error && playing && (kokoroLoading || speechLoading)
 
   return (
     <main className="h-dvh flex justify-center md:p-6">
@@ -598,7 +616,7 @@ export default function Reader({ book, onBack }: Props) {
 
         <div className="flex items-center justify-between gap-3 w-full md:max-w-2xl md:mx-auto">
           <div className="flex flex-col items-center gap-1 w-[120px]">
-            <span className={`relative inline-block ${voiceLoading ? 'voice-loading' : ''}`}>
+            <span className={`relative inline-block ${voiceLoading || portholeBusy ? `voice-loading${voiceLoading ? ' locked' : ''}` : ''}`}>
               <button
                 ref={voiceButtonRef}
                 type="button"
@@ -610,7 +628,7 @@ export default function Reader({ book, onBack }: Props) {
                 className="porthole"
               >
                 <span className="glass block">
-                  <VoiceAvatar voice={character} size={68} talking={playing && !kokoroLoading} />
+                  <VoiceAvatar voice={character} size={68} talking={playing && !kokoroLoading && !speechLoading} />
                 </span>
               </button>
             </span>

@@ -86,7 +86,11 @@ async function pickAndLoad() {
   let lastErr: unknown = null
   for (const c of list) {
     try {
+      // tell the UI a candidate is starting/downloading (transformers adds % on top of this)
+      post({ type: 'progress', status: 'starting', file: `model${c.dtype === 'q8' ? '_quantized' : ''}.onnx` })
       const m = await fromPretrained(c)
+      // first inference compiles GPU shaders; keep the UI lit while it happens
+      post({ type: 'progress', status: 'compiling' })
       // also compiles the GPU shaders so the first real sentence is quick
       if (!(await healthy(m)) && c !== list[list.length - 1]) { try { await (m as any).model?.dispose?.() } catch {} continue }
       chosen = c

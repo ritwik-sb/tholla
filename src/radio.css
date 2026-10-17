@@ -658,7 +658,7 @@ body {
   animation: voice-spin .85s linear infinite;
 }
 @keyframes voice-spin { to { transform: rotate(360deg); } }
-.voice-loading button { pointer-events: none; opacity: .85; }
+.voice-loading.locked button { pointer-events: none; opacity: .85; }
 @media (prefers-reduced-motion: reduce) {
   .voice-loading::after { animation-duration: .01ms; opacity: .5; }
 }
