@@ -13,6 +13,8 @@ import './radio.css'
 
 initInstall()
 initClicks()
+// visible in devtools/support: which build is actually running
+document.documentElement.dataset.build = __BUILD_ID__
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

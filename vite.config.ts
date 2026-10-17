@@ -1,20 +1,27 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Changes on every deploy; the app compares it with /version.json.
+const BUILD_ID = (process.env.CF_PAGES_COMMIT_SHA ?? Date.now().toString(36)).slice(0, 12)
+
 export default defineConfig({
+  define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
-      // the app decides when to apply an update (never mid-playback)
+      // updates activate immediately; the app reloads when it is safe to do so
       registerType: 'prompt',
       injectRegister: false,
       workbox: {
         maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
-        // take control on first install so the app works offline right away;
-        // later versions still wait for the app to apply them
+        // a new build takes over at once so an installed app can never get stuck
+        // on an old version; Updater decides when to reload (never mid-playback)
+        skipWaiting: true,
         clientsClaim: true,
         // the ONNX runtime .wasm and pdf.js .mjs worker must be cached for offline use
         globPatterns: ['**/*.{js,mjs,css,html,wasm,png,svg,webp,webmanifest,woff2}'],
@@ -35,6 +42,19 @@ export default defineConfig({
         ],
       },
     }),
+    {
+      name: 'tholla-build-version',
+      apply: 'build',
+      closeBundle() {
+        // Not part of the precache (globPatterns has no json), so the app can
+        // always fetch the deployed version from the network.
+        try {
+          const out = path.resolve('dist')
+          fs.mkdirSync(out, { recursive: true })
+          fs.writeFileSync(path.join(out, 'version.json'), JSON.stringify({ version: BUILD_ID }))
+        } catch {}
+      },
+    },
   ],
   worker: { format: 'es' },
   // cross-origin isolation lets the voice model use multiple CPU threads
