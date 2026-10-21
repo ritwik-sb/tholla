@@ -296,6 +296,18 @@ export default function Reader({ book, onBack }: Props) {
       a.onended = () => {
         if (audioRef.current === a) audioRef.current = null
         if (run !== runRef.current || !playingRef.current) return
+        // a clip that ends before it begins holds no speech: the engine produced
+        // silence. Stop and say so instead of racing through the book.
+        if (!(a.duration > 0.05)) {
+          playingRef.current = false
+          setPlaying(false)
+          setSpeechLoading(false)
+          haltAudio()
+          setIdx(seg.first); idxRef.current = seg.first
+          setError('The voice engine returned no sound. Tap Play to retry.')
+          saveProgress(book.id, chapterIndexRef.current, seg.first)
+          return
+        }
         speak(seg.last + 1, run)
       }
       a.onerror = () => { if (run === runRef.current) failed(seg, run, new Error('Audio could not be played')) }

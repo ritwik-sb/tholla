@@ -179,6 +179,7 @@ async function writeFile(name: string, data: Uint8Array<ArrayBuffer>) {
 }
 
 export async function store(key: string, clip: Clip) {
+  if (!clip.samples.length) return
   try {
     const n = clip.samples.length
     let body: Uint8Array
@@ -214,6 +215,11 @@ export async function store(key: string, clip: Clip) {
   } catch {
     // caching is best-effort
   }
+}
+
+export async function remove(key: string) {
+  try { await (await dir()).removeEntry(key) } catch {}
+  sizes?.delete(key)
 }
 
 export async function load(key: string): Promise<Clip | null> {

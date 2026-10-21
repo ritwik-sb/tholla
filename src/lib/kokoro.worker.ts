@@ -26,6 +26,7 @@ type Dtype = 'fp32' | 'fp16' | 'q8'
 type LoadOpts = { dtype: Dtype; device: 'wasm' | 'webgpu' }
 let forced: LoadOpts | null = null
 let chosen: LoadOpts = { dtype: 'q8', device: 'wasm' }
+let gpuBad = false
 
 const REPO = 'onnx-community/Kokoro-82M-v1.0-ONNX'
 const MODEL_URL = (d: Dtype) =>
@@ -50,7 +51,7 @@ async function gpuAdapter() {
  * A variant already on disk wins over downloading a "better" one.
  */
 async function candidates(): Promise<LoadOpts[]> {
-  const adapter = await gpuAdapter()
+  const adapter = gpuBad ? null : await gpuAdapter()
   const list: LoadOpts[] = []
   if (adapter) {
     // fp16 was tried for phones but produces garbled speech on some mobile GPUs
@@ -65,17 +66,32 @@ async function candidates(): Promise<LoadOpts[]> {
   return list
 }
 
-// A broken GPU path (some mobile drivers with f16) returns NaN or silence: detect and fall back.
+// Some mobile drivers quietly return empty, zeroed or NaN audio instead of failing.
+function quiet(samples: Float32Array, min = 0.005) {
+  let peak = 0
+  for (let i = 0; i < samples.length; i++) {
+    const x = samples[i]
+    if (!Number.isFinite(x)) return true
+    const a = x < 0 ? -x : x
+    if (a > peak) peak = a
+  }
+  return peak < min
+}
+
+// A broken GPU path (some mobile drivers) returns NaN or silence: detect and fall back.
 async function healthy(m: KokoroTTS) {
   const a = await m.generate('Ready.', { voice: 'af_heart' })
-  const s = a.audio as Float32Array
-  let peak = 0
-  for (let i = 0; i < s.length; i++) {
-    const x = s[i]
-    if (Number.isNaN(x)) return false
-    if (Math.abs(x) > peak) peak = Math.abs(x)
-  }
-  return peak > 0.01
+  return !quiet(a.audio as Float32Array, 0.01)
+}
+
+// The GPU path failed on real speech: drop it for the rest of the session.
+async function degrade() {
+  gpuBad = true
+  try { await (tts as any)?.model?.dispose?.() } catch {}
+  tts = null
+  loading = null
+  forced = null
+  chosen = { dtype: 'q8', device: 'wasm' }
 }
 
 async function pickAndLoad() {
@@ -186,6 +202,26 @@ async function synthesize(model: KokoroTTS, text: string, voice: string, speed: 
   return { samples: out, rate }
 }
 
+type Clip = { samples: Float32Array; rate: number }
+
+// Generate a clip that actually contains speech. A broken GPU can throw or quietly
+// return silence; in either case, retry the sentence once on the CPU model.
+async function speakableClip(text: string, voice: string, speed: number): Promise<Clip> {
+  let lastError: any = null
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const clip = await synthesize(await load(), text, voice, speed)
+      if (!quiet(clip.samples)) return clip
+      lastError = new Error('the voice engine returned no sound')
+    } catch (e) {
+      lastError = e
+    }
+    if (chosen.device !== 'webgpu' || attempt === 1) break
+    await degrade()
+  }
+  throw lastError ?? new Error('the voice engine returned no sound')
+}
+
 async function pump() {
   if (running) return
   running = true
@@ -199,16 +235,17 @@ async function pump() {
           post({ type: 'audio', id: job.id, blob: encodeWav(new Float32Array(0), 24000, job.padMs + 400), cached: true })
           continue
         }
-        const model = await load()
         const useCache = job.cacheable && job.speed === 1 && speechCache.cacheAvailable()
         const key = useCache ? await speechCache.cacheKey(`${chosen.device}-${chosen.dtype}|${job.voice}`, text) : ''
         const hit = useCache ? await speechCache.load(key) : null
-        if (hit) {
+        if (hit && !quiet(hit.samples)) {
           post({ type: 'audio', id: job.id, blob: encodeWav(hit.samples, hit.rate, job.padMs), cached: true, speechMs: (hit.samples.length / hit.rate) * 1000 })
           continue
         }
+        // a silent clip saved by an earlier build or a broken GPU run: throw it away
+        if (hit) void speechCache.remove(key)
         const t0 = performance.now()
-        const clip = await synthesize(model, text, job.voice, job.speed)
+        const clip = await speakableClip(text, job.voice, job.speed)
         const genMs = performance.now() - t0
         post({ type: 'audio', id: job.id, blob: encodeWav(clip.samples, clip.rate, job.padMs), cached: false, speechMs: (clip.samples.length / clip.rate) * 1000, genMs })
         if (useCache) speechCache.store(key, clip)
