@@ -88,7 +88,9 @@ export default function Reader({ book, onBack }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const voiceButtonRef = useRef<HTMLButtonElement | null>(null)
 
-  const total = sentences.current.length
+  // render from `reading`, not the refs: those only catch up after this render, and a
+  // chapter that starts at the same index triggers no second render to show its text
+  const total = reading.sentences.length
   const WINDOW = 80
   const start = total > 160 ? Math.max(0, idx - WINDOW) : 0
   const end = total > 160 ? Math.min(total, idx + WINDOW + 1) : total
@@ -260,6 +262,8 @@ export default function Reader({ book, onBack }: Props) {
     if (i >= sentences.current.length) { stop(); return }
     const seg = segmentAt(i)
     setIdx(i); idxRef.current = i
+    // the app can be killed mid-chapter with the screen off, so never rely on pause to save
+    saveProgress(book.id, chapterIndexRef.current, i)
     plan(seg)
     // let the dial spin and the status line explain the wait while audio is being made
     setSpeechLoading(true)
@@ -563,7 +567,7 @@ export default function Reader({ book, onBack }: Props) {
               <div className="flex justify-between gap-3 stamp text-[9px] tracking-[.2em] mt-0.5 text-[rgba(246,220,166,.45)]" aria-hidden="true">
                 {seek != null ? (
                   <span className="min-w-0 truncate normal-case tracking-[.06em] text-[var(--amber-text)]">
-                    Sentence {seekIndex + 1} · {sentences.current[seekIndex]?.slice(0, 60)}
+                    Sentence {seekIndex + 1} · {reading.sentences[seekIndex]?.slice(0, 60)}
                   </span>
                 ) : (
                   <span>{chapters.length > 1 ? `Band ${chapterIndex + 1}` : 'Band 1'}</span>
@@ -578,7 +582,7 @@ export default function Reader({ book, onBack }: Props) {
                   <button type="button" className="underline" onClick={() => jump(0)}>back to start</button>
                 </p>
               )}
-              {sentences.current.slice(start, end).map((text, offset) => {
+              {reading.sentences.slice(start, end).map((text, offset) => {
                 const i = start + offset
                 return <Sentence key={i} i={i} text={text} active={i === idx} onJump={jumpStable} />
               })}

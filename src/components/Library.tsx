@@ -79,8 +79,8 @@ export default function Library({ onOpen, onBusyChange }: Props) {
         }
         try {
           const name = file.name.replace(/\.pdf$/i, '')
-          const match = target ?? books.find(b => b.name === name)
-          const existing = match ? await getBook(match.id) : undefined
+          // only "re-insert this PDF" updates a book; another file with the same name is a new book
+          const existing = target ? await getBook(target.id) : undefined
           await reimport(existing, file, file.name, p => setJob({ ...p, name, index, count: list.length }))
         } catch (e: any) {
           errs.push(`${file.name}: ${e?.message || 'failed to import'}`)

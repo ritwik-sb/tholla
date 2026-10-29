@@ -37,14 +37,14 @@ const savedChoice = () => { try { return JSON.parse(localStorage.getItem(CHOICE_
 let releaseTimer: ReturnType<typeof setTimeout> | null = null
 
 /** Terminate the worker, freeing the model's GPU/CPU memory. It reloads from disk (~1 s) when needed. */
-export function releaseKokoro() {
+export function releaseKokoro(reason: Error = new CancelledError()) {
   cancelRelease()
   if (!worker) return
   worker.terminate()
   worker = null
   ready = false
   loadPromise = null
-  for (const p of pending.values()) p.reject(new CancelledError())
+  for (const p of pending.values()) p.reject(reason)
   pending.clear()
   samples.clear()
   pendingSamples.clear()
@@ -64,6 +64,9 @@ function getWorker() {
     worker = new Worker(new URL('./kokoro.worker.ts', import.meta.url), { type: 'module' })
     // tell the worker which variant this device uses, without loading it yet
     worker.postMessage({ type: 'config', opts: savedChoice() })
+    // the worker failed to start or crashed (e.g. its file is gone after a deploy): fail
+    // every waiting call so the reader shows an error instead of waiting forever
+    worker.onerror = e => releaseKokoro(new Error(e.message || 'the voice engine failed to start'))
     worker.onmessage = (e: MessageEvent) => {
       const m = e.data
       if (m.type === 'progress') {

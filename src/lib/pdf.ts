@@ -263,7 +263,7 @@ export async function extractPdfData(buf: ArrayBuffer, onProgress?: (p: ExtractP
   if (!chapters.length) chapters = [{ title: 'Full text', text: full }]
   // Page joins can still fuse two words after the paragraph-level pass, so repair
   // the assembled chapter/full text as well.
-  chapters = chapters.slice(0, 150).map(c => ({ ...c, text: repairGluedWords(c.text) }))
+  chapters = chapters.map(c => ({ ...c, text: repairGluedWords(c.text) }))
   full = repairGluedWords(full)
   return { text: full, chapters }
 }
@@ -319,7 +319,10 @@ async function outlineChapters(doc: any, full: string, pageStart: number[], numP
   const chapters: Chapter[] = []
   for (let i = 0; i < boundaries.length; i++) {
     const cur = boundaries[i]
-    if (!cur.leaf || SKIP_TITLE_RE.test(cur.title)) continue
+    if (SKIP_TITLE_RE.test(cur.title)) continue
+    // a parent ("Chapter 3" over its sections) keeps its own intro text, unless its first
+    // child starts at the same spot and the parent would just repeat the child's text
+    if (!cur.leaf && boundaries[i + 1]?.offset === cur.offset) continue
     const end = boundaries.slice(i + 1).find(b => b.offset > cur.offset)?.offset ?? full.length
     const text = full.slice(cur.offset, end).trim()
     if (text.length < 200) continue

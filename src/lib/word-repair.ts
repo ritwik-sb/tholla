@@ -16,6 +16,10 @@ function words(): Set<string> {
 
 const has = (w: string) => words().has(w)
 
+// Real words under 3 letters. Any other short piece is a fragment of one long
+// word the list doesn't know ("intern at io na lization"), so it is never a split.
+const SHORT = new Set('a i an as at be by do go he if in is it me my no of on or so to up us we'.split(' '))
+
 /** A dictionary word, or a regular inflection of one (plural, -ing, -ed, -able...). */
 function known(word: string): boolean {
   if (has(word)) return true
@@ -59,7 +63,7 @@ function segment(token: string): string[] | null {
     for (let j = Math.max(0, i - 20); j < i; j++) {
       if (!best[j]) continue
       const part = t.slice(j, i)
-      if (part.length < 2 && part !== 'a' && part !== 'i') continue
+      if (part.length < 3 && !SHORT.has(part)) continue
       if (!known(part)) continue
       const candidate = [...best[j]!, part]
       if (!best[i] || candidate.length < best[i]!.length) best[i] = candidate
